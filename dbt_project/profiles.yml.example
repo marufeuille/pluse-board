@@ -1,0 +1,20 @@
+# このファイルをコピーして ~/.dbt/profiles.yml に追記してください。
+# リポジトリには profiles.yml 本体をコミットしないでください（.gitignore 済み）。
+
+pluse_board:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth          # ローカル開発: gcloud auth application-default login
+      project: YOUR_PROJECT_ID
+      dataset: fitbit_mart
+      location: asia-northeast1
+      threads: 4
+    ci:
+      type: bigquery
+      method: oauth          # GitHub Actions: WIF で ADC がセットされる
+      project: "{{ env_var('PROJECT_ID') }}"
+      dataset: "{{ env_var('BQ_DATASET_MART', 'fitbit_mart') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-northeast1') }}"
+      threads: 4

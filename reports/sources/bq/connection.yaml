@@ -1,0 +1,7 @@
+type: bigquery
+name: bq
+options:
+  project_id: ${PROJECT_ID}
+  dataset: ${BQ_DATASET_MART}
+  location: ${BQ_LOCATION}
+  authenticator: gcloud-cli

@@ -1,0 +1,89 @@
+name: Daily Build
+
+on:
+  schedule:
+    - cron: "0 18 * * *"   # 毎日 03:00 JST
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # WIF 認証に必要
+  contents: read
+  pages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: >-
+            projects/${{ vars.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: fitbit-dashboard@${{ vars.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ingest from Health API
+        env:
+          GOOGLE_HEALTH_CLIENT_ID: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID }}
+          GOOGLE_HEALTH_CLIENT_SECRET: ${{ secrets.GOOGLE_HEALTH_CLIENT_SECRET }}
+          GOOGLE_HEALTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_HEALTH_REFRESH_TOKEN }}
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_DATASET_RAW: ${{ vars.BQ_DATASET_RAW }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+        run: |
+          uv sync --only-group ingest
+          uv run python ingest/pull_health_api.py
+
+      - name: Generate dbt profiles.yml
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << EOF
+          pluse_board:
+            target: ci
+            outputs:
+              ci:
+                type: bigquery
+                method: oauth
+                project: ${{ vars.PROJECT_ID }}
+                dataset: ${{ vars.BQ_DATASET_MART || 'fitbit_mart' }}
+                location: ${{ vars.BQ_LOCATION || 'asia-northeast1' }}
+                threads: 4
+          EOF
+
+      - name: Run dbt
+        run: |
+          uv sync --only-group dbt
+          cd dbt_project && uv run dbt deps && uv run dbt run
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build Evidence
+        working-directory: reports
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_DATASET_MART: ${{ vars.BQ_DATASET_MART }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+        run: |
+          npm ci
+          npm run sources
+          npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: reports/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
