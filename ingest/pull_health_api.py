@@ -40,8 +40,8 @@ def _load_to_bq(
         print(f"  {data_type}: データなし（{start} – {end}）")
         return
 
-    dataset = os.environ.get("BQ_DATASET_RAW", "fitbit_raw")
-    location = os.environ.get("BQ_LOCATION", "asia-northeast1")
+    dataset = os.environ.get("BQ_DATASET_RAW") or "fitbit_raw"
+    location = os.environ.get("BQ_LOCATION") or "asia-northeast1"
     table_id = f"{os.environ['PROJECT_ID']}.{dataset}.{_TABLE_NAME[data_type]}"
 
     job_config = bigquery.LoadJobConfig(
