@@ -36,74 +36,37 @@ def _load_to_bq(
     start: date,
     end: date,
 ) -> None:
-    dataset = os.environ.get("BQ_DATASET_RAW", "fitbit_raw")
-    table_id = f"{os.environ['PROJECT_ID']}.{dataset}.{_TABLE_NAME[data_type]}"
-    location = os.environ.get("BQ_LOCATION", "asia-northeast1")
-
-    # 対象期間のデータを削除してから INSERT（べき等）
-    delete_sql = f"""
-        DELETE FROM `{table_id}`
-        WHERE DATE(interval_civil_start_time) >= '{start}'
-          AND DATE(interval_civil_start_time) <  '{end}'
-    """
-    job_config = bigquery.QueryJobConfig()
-    bq.query(delete_sql, job_config=job_config, location=location).result()
-
     if not rows:
         print(f"  {data_type}: データなし（{start} – {end}）")
         return
 
-    errors = bq.insert_rows_json(table_id, rows)
-    if errors:
-        raise RuntimeError(f"BigQuery insert errors: {errors}")
+    dataset = os.environ.get("BQ_DATASET_RAW", "fitbit_raw")
+    location = os.environ.get("BQ_LOCATION", "asia-northeast1")
+    table_id = f"{os.environ['PROJECT_ID']}.{dataset}.{_TABLE_NAME[data_type]}"
 
-    print(f"  {data_type}: {len(rows)} 件を {table_id} に投入しました")
+    job_config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
+        autodetect=True,
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+    )
+    job = bq.load_table_from_json(rows, table_id, job_config=job_config, location=location)
+    job.result()
+
+    print(f"  {data_type}: {len(rows)} 件を {table_id} に追記しました")
 
 
-def _flatten_exercise(point: dict) -> dict:
-    interval = point.get("interval", {})
-    values = {v["id"]: v.get("fpVal") or v.get("intVal") or v.get("stringVal")
-              for v in point.get("value", [])}
+def _flatten(point: dict) -> dict:
     return {
-        "interval_civil_start_time": interval.get("civilStartTime"),
-        "interval_civil_end_time": interval.get("civilEndTime"),
-        "activity_type": values.get("activity"),
-        "activity_name": values.get("activityName"),
-        "duration_ms": values.get("duration"),
-        "calories": values.get("calories"),
-        "distance_m": values.get("distance"),
-        "raw": json.dumps(point),
-    }
-
-
-def _flatten_steps(point: dict) -> dict:
-    interval = point.get("interval", {})
-    values = {v["id"]: v.get("fpVal") or v.get("intVal")
-              for v in point.get("value", [])}
-    return {
-        "interval_civil_start_time": interval.get("civilStartTime"),
-        "interval_civil_end_time": interval.get("civilEndTime"),
-        "steps": values.get("steps"),
-        "raw": json.dumps(point),
-    }
-
-
-def _flatten_active_zone_minutes(point: dict) -> dict:
-    interval = point.get("interval", {})
-    values = {v["id"]: v.get("fpVal") or v.get("intVal")
-              for v in point.get("value", [])}
-    return {
-        "interval_civil_start_time": interval.get("civilStartTime"),
-        "interval_civil_end_time": interval.get("civilEndTime"),
-        "value": values.get("activeZoneMinutes"),
-        "raw": json.dumps(point),
+        "name": point.get("name"),
+        "raw": json.dumps(point, ensure_ascii=False),
     }
 
 
 _FLATTEN = {
-    "exercise": _flatten_exercise,
-    "steps": _flatten_steps,
-    "active_zone_minutes": _flatten_active_zone_minutes,
+    "exercise": _flatten,
+    "steps": _flatten,
+    "active_zone_minutes": _flatten,
 }
 
 

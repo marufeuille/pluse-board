@@ -1,6 +1,5 @@
 SELECT
-  DATE(interval_civil_start_time) AS activity_date,
-  SUM(value)                      AS load
-FROM {{ source('fitbit_raw', 'active_zone_minutes') }}
-WHERE interval_civil_start_time IS NOT NULL
+  DATE(start_time, 'Asia/Tokyo') AS activity_date,
+  SUM(value)                     AS load
+FROM {{ ref('stg_active_zone_minutes') }}
 GROUP BY 1

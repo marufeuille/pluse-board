@@ -18,4 +18,3 @@ models:
       +materialized: view
     marts:
       +materialized: table
-      +dataset: fitbit_mart

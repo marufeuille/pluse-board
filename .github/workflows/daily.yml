@@ -55,6 +55,11 @@ jobs:
           EOF
 
       - name: Run dbt
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_DATASET_RAW: ${{ vars.BQ_DATASET_RAW }}
+          BQ_DATASET_MART: ${{ vars.BQ_DATASET_MART }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
         run: |
           uv sync --only-group dbt
           cd dbt_project && uv run dbt deps && uv run dbt run

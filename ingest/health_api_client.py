@@ -6,7 +6,7 @@ API 仕様変更時はこのファイルだけ修正すれば良い。
 
 import os
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Generator
 
 import requests
@@ -59,8 +59,21 @@ class HealthApiClient:
     ) -> Generator[dict, None, None]:
         """
         指定した data_type の dataPoint を全件 yield する。
+        Health API は長期間リクエストで 503 を返しやすいため、内部で 1 日単位に分割する。
         data_type: "exercise" | "steps" | "active_zone_minutes"
         """
+        current = start
+        while current < end:
+            next_day = current + timedelta(days=1)
+            yield from self._fetch_chunk(data_type, current, min(next_day, end))
+            current = next_day
+
+    def _fetch_chunk(
+        self,
+        data_type: str,
+        start: date,
+        end: date,
+    ) -> Generator[dict, None, None]:
         endpoint = _ENDPOINT_NAME[data_type]
         filter_key = _FILTER_NAME[data_type]
         url = f"{BASE_URL}/{endpoint}/dataPoints"
@@ -76,16 +89,19 @@ class HealthApiClient:
                 params["pageToken"] = page_token
 
             headers = {"Authorization": f"Bearer {self._access_token()}"}
-            resp = requests.get(url, params=params, headers=headers, timeout=30)
 
-            if resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", "60"))
-                time.sleep(retry_after)
-                continue
-
+            for attempt in range(5):
+                resp = requests.get(url, params=params, headers=headers, timeout=30)
+                if resp.status_code == 429:
+                    time.sleep(int(resp.headers.get("Retry-After", "60")))
+                elif resp.status_code in (500, 502, 503, 504):
+                    print(f"  [{attempt+1}/5] HTTP {resp.status_code}: {resp.text[:300]}")
+                    time.sleep(2 ** attempt * 5)
+                else:
+                    break
             resp.raise_for_status()
-            body = resp.json()
 
+            body = resp.json()
             for point in body.get("dataPoints", []):
                 yield point
 

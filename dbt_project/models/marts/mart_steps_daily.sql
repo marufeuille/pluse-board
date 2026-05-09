@@ -1,6 +1,5 @@
 SELECT
-  DATE(interval_civil_start_time) AS activity_date,
-  SUM(steps)                      AS steps
-FROM {{ source('fitbit_raw', 'steps') }}
-WHERE interval_civil_start_time IS NOT NULL
+  DATE(start_time, 'Asia/Tokyo') AS activity_date,
+  SUM(steps)                     AS steps
+FROM {{ ref('stg_steps') }}
 GROUP BY 1

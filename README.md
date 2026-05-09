@@ -144,20 +144,14 @@ uv run python ingest/pull_health_api.py --data-type exercise --start 2026-04-01
 
 ### dbt 動作確認
 
-`~/.dbt/profiles.yml` に以下を追加してください（テンプレートは `dbt_project/profiles.yml.example`）:
+`dbt_project/profiles.yml` をテンプレート（`profiles.yml.example`）からコピーして作成してください。このファイルは gitignore 済みなのでリポジトリには含まれません。
 
-```yaml
-pluse_board:
-  target: dev
-  outputs:
-    dev:
-      type: bigquery
-      method: oauth
-      project: YOUR_PROJECT_ID
-      dataset: fitbit_mart
-      location: asia-northeast1
-      threads: 4
+```bash
+cp dbt_project/profiles.yml.example dbt_project/profiles.yml
+# YOUR_PROJECT_ID を実際の値に書き換える
 ```
+
+事前に `gcloud auth application-default login` で認証してから:
 
 ```bash
 # リポジトリルートで実行
