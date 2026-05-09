@@ -1,6 +1,6 @@
 # pluse-board
 
-Fitbit データを Google Health API で取得し、BigQuery → dbt → Evidence → GitHub Pages で可視化するダッシュボード。
+Google Health API で取得した健康データ（運動・歩数・アクティブゾーン分）を、BigQuery → dbt → Evidence → GitHub Pages で可視化するダッシュボード。
 
 ## アーキテクチャ
 

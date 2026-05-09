@@ -1,4 +1,4 @@
-# Fitbit ダッシュボード
+# Pluse Board
 
 ```sql summary
 SELECT
