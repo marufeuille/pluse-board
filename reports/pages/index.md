@@ -16,21 +16,22 @@ SELECT
 <BigValue
   data={summary}
   value=exercise_min_7d
-  title="直近7日の運動時間"
-  fmt="# 分"
+  title="直近7日の運動時間（分）"
+  fmt="#,##0"
 />
 
 <BigValue
   data={summary}
   value=steps_7d
   title="直近7日の歩数"
-  fmt="#,### 歩"
+  fmt="#,##0"
 />
 
 <BigValue
   data={summary}
   value=latest_acwr
   title="最新 ACWR"
+  fmt="0.00"
 />
 
 ## 直近30日の運動時間

@@ -21,7 +21,7 @@ ORDER BY activity_date
 
 ```sql steps_weekly
 SELECT
-  DATE_TRUNC(activity_date, WEEK(MONDAY)) AS week_start,
+  DATE_TRUNC('week', activity_date) AS week_start,
   AVG(steps)                              AS avg_steps,
   SUM(steps)                              AS total_steps
 FROM bq.mart_steps_daily

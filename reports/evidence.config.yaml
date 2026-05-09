@@ -1,2 +1,8 @@
+plugins:
+  components:
+    "@evidence-dev/core-components": {}
+  datasources:
+    "@evidence-dev/bigquery": {}
+
 deployment:
   basePath: /pluse-board

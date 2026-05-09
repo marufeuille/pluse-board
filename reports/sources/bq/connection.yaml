@@ -1,7 +1,7 @@
 type: bigquery
 name: bq
 options:
-  project_id: ${PROJECT_ID}
-  dataset: ${BQ_DATASET_MART}
-  location: ${BQ_LOCATION}
+  project_id: pluse-board
+  dataset: fitbit_mart
+  location: asia-northeast1
   authenticator: gcloud-cli

@@ -2,6 +2,7 @@
   "name": "pluse-board-reports",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "evidence dev",
     "build": "evidence build",
@@ -9,10 +10,18 @@
     "preview": "evidence preview"
   },
   "dependencies": {
-    "@evidence-dev/evidence": "^36.0.0",
-    "@evidence-dev/bigquery": "^1.0.0"
+    "@evidence-dev/bigquery": "^2.0.12",
+    "@evidence-dev/core-components": "^5.4.2",
+    "@evidence-dev/evidence": "^40.1.8",
+    "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0"
   },
   "devDependencies": {
-    "@evidence-dev/preprocess": "^5.0.0"
+    "@evidence-dev/preprocess": "^6.0.7"
+  },
+  "overrides": {
+    "svelte": "^4.2.19"
   }
 }

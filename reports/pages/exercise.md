@@ -24,7 +24,7 @@ ORDER BY activity_date
 
 ```sql weekly_exercise
 SELECT
-  DATE_TRUNC(activity_date, WEEK(MONDAY)) AS week_start,
+  DATE_TRUNC('week', activity_date) AS week_start,
   activity_name,
   SUM(duration_minutes)                   AS duration_minutes
 FROM bq.mart_exercise_daily
@@ -46,7 +46,7 @@ ORDER BY 1
 
 ```sql monthly_exercise
 SELECT
-  DATE_TRUNC(activity_date, MONTH) AS month_start,
+  DATE_TRUNC('month', activity_date) AS month_start,
   activity_name,
   SUM(duration_minutes)            AS duration_minutes
 FROM bq.mart_exercise_daily
