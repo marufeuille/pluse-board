@@ -189,4 +189,4 @@ ORDER BY d.day
 
 ---
 
-[週次比較ページへ →](/compare) ・ 詳細ページ: [運動の推移](/exercise) ・ [歩数](/steps) ・ [ACWR](/acwr)
+[週次比較ページへ →](/compare) ・ 詳細: [運動の推移](/exercise) ・ [歩数](/steps) ・ [ACWR](/acwr) ・ [指標の定義](/about)
