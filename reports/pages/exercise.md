@@ -1,3 +1,8 @@
+---
+title: Exercise
+sidebar_position: 4
+---
+
 # 運動の推移
 
 ```sql daily_exercise

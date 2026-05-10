@@ -1,3 +1,8 @@
+---
+title: ACWR
+sidebar_position: 3
+---
+
 # ACWR（Acute:Chronic Workload Ratio）
 
 ACWR = 直近7日の平均日次負荷 ÷ 直近28日の平均日次負荷。
@@ -33,9 +38,7 @@ WHERE d >= CURRENT_DATE - INTERVAL 90 DAY
   yMin=0
   yMax={acwr_bounds[0].y_max}
 >
-  <ReferenceLine y=0.8 label="0.8" color=green />
-  <ReferenceLine y=1.3 label="1.3" color=green />
-  <ReferenceLine y=1.5 label="1.5 (過負荷)" color=red />
+  {@partial "acwr_reference_lines.md"}
 </LineChart>
 
 ## 日次負荷の推移

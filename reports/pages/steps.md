@@ -1,3 +1,8 @@
+---
+title: Steps
+sidebar_position: 5
+---
+
 # 歩数の推移
 
 ```sql steps_daily
