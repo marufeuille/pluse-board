@@ -2,18 +2,23 @@
 
 Google Health API で取得した健康データ（運動・歩数・アクティブゾーン分）を、BigQuery → dbt → Evidence → GitHub Pages で可視化するダッシュボード。
 
+> **プロジェクト名について**
+> `pluse` は **plus**（健康にプラス）と **pulse**（健康の鼓動・脈動）を組み合わせた造語です。typo ではなく意図的な綴りです。
+
 ## アーキテクチャ
 
-```
-Google Health API
-      ↓ Python（日次取得）
-BigQuery（raw layer）
-      ↓ dbt-bigquery
-BigQuery（mart layer）
-      ↑
-GitHub Actions（WIF で SA 借用）
-      ↓ Evidence build
-GitHub Pages
+```mermaid
+flowchart TD
+    GH[Google Health API]
+    Raw[(BigQuery raw)]
+    Mart[(BigQuery mart)]
+    GA[GitHub Actions<br/>WIF + SA]
+    Pages[GitHub Pages]
+
+    GH -->|Python 日次取得| Raw
+    Raw -->|dbt-bigquery| Mart
+    GA -.読み取り.-> Mart
+    GA -->|Evidence build| Pages
 ```
 
 ---
