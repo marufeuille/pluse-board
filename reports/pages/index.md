@@ -3,7 +3,7 @@ title: Home
 sidebar_position: 1
 ---
 
-# Pluse Board — 週次レポート
+# 週次レポート
 
 {@partial "week_options.md"}
 

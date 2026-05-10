@@ -7,8 +7,6 @@ sidebar_position: 2
 
 {@partial "week_options.md"}
 
-基準週 (A) と比較週 (B) を曜日揃えで横並び比較。
-
 <Dropdown name=base_week title="基準週 (A)">
   {#each weekOptions as w}
     <DropdownOption value={w.week_start} valueLabel={w.week_label} />
