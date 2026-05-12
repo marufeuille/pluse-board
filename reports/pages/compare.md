@@ -31,6 +31,7 @@ ex_a AS (
     COALESCE(SUM(CASE WHEN category = 'ウォーキング'   THEN duration_minutes END), 0) AS walk,
     COALESCE(SUM(CASE WHEN category = 'パワーウォーク' THEN duration_minutes END), 0) AS power_walk,
     COALESCE(SUM(CASE WHEN category = '筋トレ'         THEN duration_minutes END), 0) AS strength,
+    COALESCE(SUM(CASE WHEN category = 'その他運動'     THEN duration_minutes END), 0) AS other,
     COALESCE(SUM(duration_minutes), 0)                                                AS total
   FROM bq.mart_exercise_daily_categorized m, base_dt
   WHERE m.activity_date BETWEEN base_dt.ws AND base_dt.ws + 6
@@ -40,6 +41,7 @@ ex_b AS (
     COALESCE(SUM(CASE WHEN category = 'ウォーキング'   THEN duration_minutes END), 0) AS walk,
     COALESCE(SUM(CASE WHEN category = 'パワーウォーク' THEN duration_minutes END), 0) AS power_walk,
     COALESCE(SUM(CASE WHEN category = '筋トレ'         THEN duration_minutes END), 0) AS strength,
+    COALESCE(SUM(CASE WHEN category = 'その他運動'     THEN duration_minutes END), 0) AS other,
     COALESCE(SUM(duration_minutes), 0)                                                AS total
   FROM bq.mart_exercise_daily_categorized m, comp_dt
   WHERE m.activity_date BETWEEN comp_dt.ws AND comp_dt.ws + 6
@@ -66,6 +68,7 @@ SELECT
   ex_a.walk         AS walk_a,         ex_b.walk         AS walk_b,
   ex_a.power_walk   AS power_walk_a,   ex_b.power_walk   AS power_walk_b,
   ex_a.strength     AS strength_a,     ex_b.strength     AS strength_b,
+  ex_a.other        AS other_a,        ex_b.other        AS other_b,
   ex_a.total        AS total_a,        ex_b.total        AS total_b,
   load_a.total_load AS load_a,         load_b.total_load AS load_b,
   load_a.latest_acwr AS acwr_a,        load_b.latest_acwr AS acwr_b
@@ -78,6 +81,7 @@ FROM ex_a, ex_b, load_a, load_b
 <BigValue data={kpi_compare} value=walk_a        comparison=walk_b        title="ウォーキング（分）"     fmt="#,##0" />
 <BigValue data={kpi_compare} value=power_walk_a  comparison=power_walk_b  title="パワーウォーク（分）"   fmt="#,##0" />
 <BigValue data={kpi_compare} value=strength_a    comparison=strength_b    title="筋トレ（分）"           fmt="#,##0" />
+<BigValue data={kpi_compare} value=other_a       comparison=other_b       title="その他運動（分）"       fmt="#,##0" />
 <BigValue data={kpi_compare} value=load_a        comparison=load_b        title="負荷量 合計（AZM）"     fmt="#,##0" />
 <BigValue data={kpi_compare} value=acwr_a        comparison=acwr_b        title="週末 ACWR"              fmt="0.00" />
 
@@ -106,7 +110,8 @@ weeks AS (
 categories AS (
   SELECT 'ウォーキング'   AS category UNION ALL
   SELECT 'パワーウォーク' UNION ALL
-  SELECT '筋トレ'
+  SELECT '筋トレ'         UNION ALL
+  SELECT 'その他運動'
 ),
 matrix AS (
   SELECT
@@ -166,6 +171,19 @@ ORDER BY m.day_offset, m.week_id, m.category
   type=grouped
   sort=false
   title="筋トレ (曜日別、分)"
+  yAxisTitle="分"
+/>
+
+### その他運動
+
+<BarChart
+  data={dow_exercise.where(`category = 'その他運動'`)}
+  x=dow
+  y=minutes
+  series=week_label
+  type=grouped
+  sort=false
+  title="その他運動 (曜日別、分)"
   yAxisTitle="分"
 />
 

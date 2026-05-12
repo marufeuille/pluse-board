@@ -18,6 +18,7 @@ SELECT
   COALESCE(SUM(CASE WHEN category = 'ウォーキング'   THEN duration_minutes END), 0) AS walk_min,
   COALESCE(SUM(CASE WHEN category = 'パワーウォーク' THEN duration_minutes END), 0) AS power_walk_min,
   COALESCE(SUM(CASE WHEN category = '筋トレ'         THEN duration_minutes END), 0) AS strength_min,
+  COALESCE(SUM(CASE WHEN category = 'その他運動'     THEN duration_minutes END), 0) AS other_min,
   COALESCE(SUM(duration_minutes), 0)                                                AS total_min
 FROM bq.mart_exercise_daily_categorized
 WHERE activity_date BETWEEN CAST('${inputs.selected_week.value}' AS DATE)
@@ -44,6 +45,7 @@ WHERE d BETWEEN CAST('${inputs.selected_week.value}' AS DATE)
 <BigValue data={week_kpi} value=walk_min       title="ウォーキング（分）"     fmt="#,##0" />
 <BigValue data={week_kpi} value=power_walk_min title="パワーウォーク（分）"   fmt="#,##0" />
 <BigValue data={week_kpi} value=strength_min   title="筋トレ（分）"           fmt="#,##0" />
+<BigValue data={week_kpi} value=other_min      title="その他運動（分）"       fmt="#,##0" />
 <BigValue data={week_load} value=total_load    title="負荷量 合計（AZM）"     fmt="#,##0" />
 <BigValue data={week_load} value=latest_acwr   title="週末 ACWR"              fmt="0.00" />
 
@@ -57,7 +59,8 @@ WITH days AS (
 categories AS (
   SELECT 'ウォーキング'   AS category UNION ALL
   SELECT 'パワーウォーク' UNION ALL
-  SELECT '筋トレ'
+  SELECT '筋トレ'         UNION ALL
+  SELECT 'その他運動'
 ),
 matrix AS (
   SELECT day AS activity_date, category FROM days CROSS JOIN categories
@@ -151,7 +154,8 @@ ex AS (
     activity_date,
     SUM(CASE WHEN category = 'ウォーキング'   THEN duration_minutes END) AS walk_min,
     SUM(CASE WHEN category = 'パワーウォーク' THEN duration_minutes END) AS power_walk_min,
-    SUM(CASE WHEN category = '筋トレ'         THEN duration_minutes END) AS strength_min
+    SUM(CASE WHEN category = '筋トレ'         THEN duration_minutes END) AS strength_min,
+    SUM(CASE WHEN category = 'その他運動'     THEN duration_minutes END) AS other_min
   FROM bq.mart_exercise_daily_categorized
   WHERE activity_date BETWEEN CAST('${inputs.selected_week.value}' AS DATE)
                           AND CAST('${inputs.selected_week.value}' AS DATE) + INTERVAL 6 DAY
@@ -166,7 +170,9 @@ SELECT
   COALESCE(ex.walk_min, 0)           AS "ウォーキング(分)",
   COALESCE(ex.power_walk_min, 0)     AS "パワーウォーク(分)",
   COALESCE(ex.strength_min, 0)       AS "筋トレ(分)",
-  COALESCE(ex.walk_min, 0) + COALESCE(ex.power_walk_min, 0) + COALESCE(ex.strength_min, 0)
+  COALESCE(ex.other_min, 0)          AS "その他運動(分)",
+  COALESCE(ex.walk_min, 0) + COALESCE(ex.power_walk_min, 0)
+    + COALESCE(ex.strength_min, 0) + COALESCE(ex.other_min, 0)
                                      AS "合計(分)",
   COALESCE(a.load, 0)                AS "負荷量(AZM)",
   ROUND(a.acwr, 2)                   AS ACWR
@@ -182,6 +188,7 @@ ORDER BY d.day
   <Column id="ウォーキング(分)"   contentType=colorscale colorScale=blues />
   <Column id="パワーウォーク(分)" contentType=colorscale colorScale=greens />
   <Column id="筋トレ(分)"          contentType=colorscale colorScale=oranges />
+  <Column id="その他運動(分)"      contentType=colorscale colorScale=purples />
   <Column id="合計(分)" />
   <Column id="負荷量(AZM)"         contentType=colorscale colorScale=reds />
   <Column id=ACWR                  fmt="0.00" />
