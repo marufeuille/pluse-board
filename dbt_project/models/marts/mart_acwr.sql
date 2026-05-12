@@ -9,7 +9,7 @@ calendar AS (
   SELECT d
   FROM UNNEST(GENERATE_DATE_ARRAY(
     (SELECT MIN(d) FROM daily_load),
-    CURRENT_DATE()
+    CURRENT_DATE("Asia/Tokyo")
   )) AS d
 ),
 filled AS (
