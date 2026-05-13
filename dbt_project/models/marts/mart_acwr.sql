@@ -1,4 +1,6 @@
--- 休養日を 0 埋めしないと rolling 平均が過大評価されるため calendar JOIN は必須
+-- 休養日を 0 埋めしないと rolling 平均が過大評価されるため calendar JOIN は必須。
+-- 上限は CURRENT_DATE ではなく ingest 済みの最終日に揃える。今日分のロードが
+-- 0 埋めされた状態で ACWR を出すと、翌朝の再ビルドで数値が動いて解釈を誤らせる。
 WITH daily_load AS (
   SELECT
     activity_date AS d,
@@ -9,7 +11,7 @@ calendar AS (
   SELECT d
   FROM UNNEST(GENERATE_DATE_ARRAY(
     (SELECT MIN(d) FROM daily_load),
-    CURRENT_DATE("Asia/Tokyo")
+    (SELECT MAX(d) FROM daily_load)
   )) AS d
 ),
 filled AS (
