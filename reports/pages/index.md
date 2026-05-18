@@ -125,11 +125,6 @@ LEFT JOIN bq.mart_acwr a ON d.day = a.d
 ORDER BY d.day
 ```
 
-```sql acwr_bounds
-SELECT GREATEST(COALESCE(MAX(acwr), 0) * 1.1, 1.7) AS y_max
-FROM acwr_in_week
-```
-
 <LineChart
   data={acwr_in_week}
   x=activity_date
@@ -137,7 +132,8 @@ FROM acwr_in_week
   title="ACWR（7日平均 ÷ 28日平均）"
   yAxisTitle="ACWR"
   yMin=0
-  yMax={acwr_bounds[0].y_max}
+  yMax={Math.max(1.7, ...acwr_in_week.map(d => (d.acwr ?? 0) * 1.1))}
+  markers=true
 >
   {@partial "acwr_reference_lines.md"}
 </LineChart>
