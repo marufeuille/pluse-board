@@ -133,6 +133,7 @@ ORDER BY d.day
   yAxisTitle="ACWR"
   yMin=0
   yMax={Math.max(1.7, ...acwr_in_week.map(d => (d.acwr ?? 0) * 1.1))}
+  markers=true
 >
   {@partial "acwr_reference_lines.md"}
 </LineChart>
