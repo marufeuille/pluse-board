@@ -41,6 +41,15 @@ jobs:
           uv sync --only-group ingest
           uv run python ingest/pull_health_api.py
 
+      - name: Check Health API freshness
+        if: github.event_name != 'push'
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_DATASET_RAW: ${{ vars.BQ_DATASET_RAW }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+        run: |
+          uv run python ingest/check_health_data_freshness.py
+
       - name: Generate dbt profiles.yml
         run: |
           mkdir -p ~/.dbt

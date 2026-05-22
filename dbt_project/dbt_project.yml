@@ -1,5 +1,6 @@
 name: pluse_board
 version: "1.0.0"
+config-version: 2
 profile: pluse_board
 
 model-paths: ["models"]

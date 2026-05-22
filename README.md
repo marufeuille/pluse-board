@@ -145,6 +145,12 @@ uv sync --only-group ingest
 
 # exercise データを取得して BigQuery にロード
 uv run python ingest/pull_health_api.py --data-type exercise --start 2026-04-01
+
+# 既定では JST 今日を end（exclusive）として直近 3 日分を再取得する
+uv run python ingest/pull_health_api.py
+
+# 最新の完了日（既定: JST 昨日）が raw に入っているか確認する
+uv run python ingest/check_health_data_freshness.py
 ```
 
 ### dbt 動作確認
