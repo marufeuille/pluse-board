@@ -15,7 +15,7 @@ from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 import json
 
-SCOPES = "https://www.googleapis.com/auth/googlehealth.activity_and_fitness"
+SCOPES = "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly"
 AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 REDIRECT_URI = "http://localhost:8080/callback"

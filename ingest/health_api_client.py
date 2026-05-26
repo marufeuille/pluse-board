@@ -15,7 +15,7 @@ from google.auth.transport.requests import Request as GoogleRequest
 
 BASE_URL = "https://health.googleapis.com/v4/users/me/dataTypes"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
-SCOPES = ["https://www.googleapis.com/auth/googlehealth.activity_and_fitness"]
+SCOPES = ["https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly"]
 
 # エンドポイント URL は kebab-case、filter パラメータは snake_case
 _ENDPOINT_NAME = {
