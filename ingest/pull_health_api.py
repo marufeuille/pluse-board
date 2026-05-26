@@ -12,6 +12,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 
 from google.cloud import bigquery
+from requests import HTTPError
 
 from health_api_client import HealthApiClient
 
@@ -143,6 +144,46 @@ _FLATTEN = {
 }
 
 
+def _day_ranges(start: date, end: date) -> list[tuple[date, date]]:
+    ranges = []
+    current = start
+    while current < end:
+        next_day = min(current + timedelta(days=1), end)
+        ranges.append((current, next_day))
+        current = next_day
+    return ranges
+
+
+def _can_skip_fetch_error(
+    error: HTTPError,
+    day_start: date,
+    required_start: date,
+    allow_stale_403: bool,
+) -> bool:
+    response = error.response
+    return (
+        allow_stale_403
+        and response is not None
+        and response.status_code == 403
+        and day_start < required_start
+    )
+
+
+def _print_fetch_error_warning(
+    data_type: str,
+    day_start: date,
+    day_end: date,
+    error: HTTPError,
+) -> None:
+    response = error.response
+    detail = response.text[:500] if response is not None else str(error)
+    print(
+        "::warning::"
+        f"{data_type} fetch skipped for stale lookback day {day_start} – {day_end}: "
+        f"{error}. Response: {detail}"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -179,6 +220,8 @@ def main() -> None:
         if args.start
         else end - timedelta(days=args.lookback_days)
     )
+    required_start = end - timedelta(days=1)
+    allow_stale_403 = args.start is None
 
     if args.data_type == "all":
         targets = ENABLED_DATA_TYPES
@@ -192,10 +235,20 @@ def main() -> None:
     bq = _bq_client()
 
     for dt in targets:
-        print(f"{dt} を取得中 ({start} – {end}) ...")
         flatten = _FLATTEN[dt]
-        rows = [flatten(p) for p in client.fetch_data_points(dt, start, end)]
-        _load_to_bq(bq, rows, dt, start, end)
+        for day_start, day_end in _day_ranges(start, end):
+            print(f"{dt} を取得中 ({day_start} – {day_end}) ...")
+            try:
+                rows = [
+                    flatten(p)
+                    for p in client.fetch_data_points(dt, day_start, day_end)
+                ]
+            except HTTPError as e:
+                if _can_skip_fetch_error(e, day_start, required_start, allow_stale_403):
+                    _print_fetch_error_warning(dt, day_start, day_end, e)
+                    continue
+                raise
+            _load_to_bq(bq, rows, dt, day_start, day_end)
 
 
 if __name__ == "__main__":
