@@ -42,6 +42,7 @@ WHERE d >= CURRENT_DATE - INTERVAL 90 DAY
 >
   {@partial "acwr_reference_lines.md"}
 </LineChart>
+{@partial "acwr_reference_legend.md"}
 
 ## 日次負荷の推移
 

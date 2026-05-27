@@ -137,6 +137,7 @@ ORDER BY d.day
 >
   {@partial "acwr_reference_lines.md"}
 </LineChart>
+{@partial "acwr_reference_legend.md"}
 
 ## サマリ表
 

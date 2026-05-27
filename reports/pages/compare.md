@@ -285,6 +285,7 @@ ORDER BY m.day_offset, m.week_label
 >
   {@partial "acwr_reference_lines.md"}
 </LineChart>
+{@partial "acwr_reference_legend.md"}
 
 ---
 
