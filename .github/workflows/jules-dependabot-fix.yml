@@ -1,0 +1,40 @@
+name: Jules Dependabot Fixer
+
+on:
+  workflow_run:
+    workflows: ["PR Check"] # 👈 ここに、普段テストを走らせているメインのワークフロー名を入れてください
+    types:
+      - completed
+
+jobs:
+  jules-remediation:
+    # 条件：PR Checkが「失敗」し、かつその原因が「DependabotのPR」である場合のみ実行
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.pull_requests[0].user.login == 'dependabot[bot]'
+    
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # Julesが修正コードをプッシュするために必要
+      pull-requests: write
+
+    steps:
+      # 1. 失敗したDependabotのPRのブランチをチェックアウト
+      - name: Checkout Dependabot PR Branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.workflow_run.pull_requests[0].head.repo.full_name }}
+          ref: ${{ github.event.workflow_run.pull_requests[0].head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Julesのエージェントを起動して尻拭いを依頼
+      # ※Julesのセットアップ方法（CLIや専用Action）に合わせて記述します
+      - name: Run Jules Fixer
+        uses: google-gemini/jules-action@v1 # （※一般的なJules Actionのイメージです）
+        with:
+          api-key: ${{ secrets.JULES_API_KEY }}
+          prompt: |
+            Dependabotによる依存パッケージのアップデートにより、メインのCIが失敗しました。
+            直前のCIのエラーログや、変更されたパッケージの型定義を確認し、破壊的変更に対応するように自律的にコードを修正してください。
+            修正後はローカルでテストを実行し、パスすることを確認した上でコミットしてください。
+
