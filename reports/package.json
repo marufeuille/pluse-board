@@ -13,7 +13,7 @@
     "@evidence-dev/bigquery": "^2.0.12",
     "@evidence-dev/core-components": "^5.4.2",
     "@evidence-dev/evidence": "^40.1.8",
-    "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "autoprefixer": "^10.4.0",
     "git-remote-origin-url": "^4.0.0",
     "postcss": "^8.5.15",
