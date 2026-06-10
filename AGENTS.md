@@ -1,0 +1,50 @@
+# AGENTS.md
+
+## Repository Overview
+
+- `pluse-board` is a private health dashboard: Google Health API -> BigQuery -> dbt -> Evidence -> GitHub Pages.
+- The spelling `pluse` is intentional: it combines "plus" and "pulse".
+- Treat health data, OAuth credentials, GCP settings, and GitHub secrets as sensitive.
+
+## Working Rules
+
+- Do not push directly to `main`. Use a pull request unless the user explicitly asks for a direct push.
+- Keep changes narrowly scoped. Avoid unrelated refactors, lockfile churn, or generated artifact updates.
+- Preserve user work in the tree. There may be unrelated modified or untracked files; do not revert, delete, or stage them unless asked.
+- Do not commit local credentials, profiles, cache files, build output, or downloaded data.
+- Do not change GitHub repository settings, branch protection, GCP IAM, Workload Identity Federation, GitHub Secrets, or GitHub Variables unless the user explicitly asks.
+
+## Verification
+
+Run the smallest relevant checks for the files changed.
+
+- GitHub Actions workflows: `./scripts/actionlint`
+- Python dependency metadata: `UV_CACHE_DIR=.uv-cache uv lock --check`
+- Python dependency install check: `uv sync --frozen --only-group ingest` and/or `uv sync --frozen --only-group dbt`
+- Evidence dependency install check: `cd reports && npm ci`
+- Evidence build check, when report pages or sources change and BigQuery credentials are available: `cd reports && npm run sources && npm run build`
+- dbt check, when dbt models change and BigQuery credentials are available: `uv sync --only-group dbt && cd dbt_project && uv run dbt deps && uv run dbt run`
+
+If a check cannot run because it needs external credentials, network access, Docker daemon access, or GCP access, say that clearly and run the closest local/static check instead.
+
+## CI and Dependabot
+
+- Required PR checks are expected to include:
+  - `PR Check / GitHub Actions lint`
+  - `PR Check / Python lock`
+  - `PR Check / Reports lock`
+- Dependabot manages:
+  - root `uv` dependencies
+  - `reports/` npm dependencies
+  - GitHub Actions versions
+- Dependabot patch and minor PRs may be auto-merged only after required checks pass.
+- Major dependency updates should remain manual review items.
+- Do not broaden Dependabot scope to untracked or experimental manifests without user confirmation.
+
+## Automation Boundaries
+
+For scheduled or background agents:
+
+- If Daily Build fails due to an obvious code, workflow, lockfile, dbt, or report issue, it is acceptable to propose or prepare a minimal PR.
+- If the failure appears related to Health API availability, token refresh, BigQuery data freshness, GCP IAM, WIF, GitHub Pages settings, GitHub Secrets, or GitHub Variables, do not attempt an automatic fix. Report the likely cause and the manual action needed.
+- Never rotate secrets, alter IAM, change repository security settings, or bypass branch protection from automation.
