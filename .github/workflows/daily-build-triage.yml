@@ -4,6 +4,29 @@ on:
   workflow_run:
     workflows: ["Daily Build"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Daily Build run ID to triage. Leave empty when using a synthetic test case."
+        required: false
+        type: string
+      dry_run:
+        description: "When true, do not rerun jobs, open PRs, or create issues."
+        required: true
+        default: true
+        type: boolean
+      test_case:
+        description: "Synthetic failed-run log to test classification without a real failed run."
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - transient_network
+          - report_dependency
+          - dbt_sql
+          - gcp_wif_manual
+          - health_data_manual
 
 permissions:
   contents: read
@@ -11,45 +34,150 @@ permissions:
 jobs:
   triage:
     name: Triage failure
-    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'failure'
+      }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
     outputs:
       classification: ${{ steps.parse.outputs.classification }}
+      dry_run: ${{ steps.context.outputs.dry_run }}
+      head_branch: ${{ steps.context.outputs.head_branch }}
+      head_sha: ${{ steps.context.outputs.head_sha }}
+      run_attempt: ${{ steps.context.outputs.run_attempt }}
+      run_id: ${{ steps.context.outputs.run_id }}
+      run_url: ${{ steps.context.outputs.run_url }}
       should_rerun: ${{ steps.parse.outputs.should_rerun }}
       should_open_pr: ${{ steps.parse.outputs.should_open_pr }}
       summary: ${{ steps.parse.outputs.summary }}
     steps:
+      - name: Resolve run context
+        id: context
+        env:
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+          DISPATCH_RUN_ID: ${{ inputs.run_id }}
+          DISPATCH_TEST_CASE: ${{ inputs.test_case }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+          WORKFLOW_RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+
+          actor="$GITHUB_ACTOR"
+          conclusion="failure"
+          dry_run="false"
+          event="workflow_run"
+          head_branch="$GITHUB_REF_NAME"
+          head_sha="$GITHUB_SHA_VALUE"
+          run_attempt="0"
+          run_id=""
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          test_case="none"
+          workflow_name="Daily Build"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            dry_run="${DISPATCH_DRY_RUN:-true}"
+            test_case="${DISPATCH_TEST_CASE:-none}"
+
+            if [ -n "${DISPATCH_RUN_ID:-}" ]; then
+              run_json="$(
+                gh run view "$DISPATCH_RUN_ID" \
+                  --json attempt,conclusion,event,headBranch,headSha,url,workflowName
+              )"
+              run_id="$DISPATCH_RUN_ID"
+              run_attempt="$(jq -r '.attempt // 0' <<< "$run_json")"
+              conclusion="$(jq -r '.conclusion // "unknown"' <<< "$run_json")"
+              event="$(jq -r '.event // "unknown"' <<< "$run_json")"
+              head_branch="$(jq -r '.headBranch // ""' <<< "$run_json")"
+              head_sha="$(jq -r '.headSha // ""' <<< "$run_json")"
+              run_url="$(jq -r '.url // ""' <<< "$run_json")"
+              workflow_name="$(jq -r '.workflowName // "Daily Build"' <<< "$run_json")"
+            elif [ "$dry_run" != "true" ]; then
+              echo "::error::workflow_dispatch with dry_run=false requires run_id."
+              exit 1
+            else
+              event="manual_synthetic"
+              workflow_name="Daily Build synthetic test"
+            fi
+          else
+            actor="$WORKFLOW_RUN_ACTOR"
+            conclusion="$WORKFLOW_RUN_CONCLUSION"
+            event="$WORKFLOW_RUN_EVENT"
+            head_branch="$WORKFLOW_RUN_HEAD_BRANCH"
+            head_sha="$WORKFLOW_RUN_HEAD_SHA"
+            run_attempt="$WORKFLOW_RUN_ATTEMPT"
+            run_id="$WORKFLOW_RUN_ID"
+            run_url="$WORKFLOW_RUN_URL"
+            workflow_name="$WORKFLOW_RUN_NAME"
+          fi
+
+          {
+            echo "actor=$actor"
+            echo "conclusion=$conclusion"
+            echo "dry_run=$dry_run"
+            echo "event=$event"
+            echo "head_branch=$head_branch"
+            echo "head_sha=$head_sha"
+            echo "run_attempt=$run_attempt"
+            echo "run_id=$run_id"
+            echo "run_url=$run_url"
+            echo "test_case=$test_case"
+            echo "workflow_name=$workflow_name"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ steps.context.outputs.head_sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Write triage context
         run: |
           cat > daily-build-context.md << EOF
-          workflow_name: ${{ github.event.workflow_run.name }}
-          workflow_run_id: ${{ github.event.workflow_run.id }}
-          workflow_run_attempt: ${{ github.event.workflow_run.run_attempt }}
-          workflow_event: ${{ github.event.workflow_run.event }}
-          workflow_conclusion: ${{ github.event.workflow_run.conclusion }}
-          head_branch: ${{ github.event.workflow_run.head_branch }}
-          head_sha: ${{ github.event.workflow_run.head_sha }}
-          actor: ${{ github.event.workflow_run.actor.login }}
-          run_url: ${{ github.event.workflow_run.html_url }}
+          workflow_name: ${{ steps.context.outputs.workflow_name }}
+          workflow_run_id: ${{ steps.context.outputs.run_id }}
+          workflow_run_attempt: ${{ steps.context.outputs.run_attempt }}
+          workflow_event: ${{ steps.context.outputs.event }}
+          workflow_conclusion: ${{ steps.context.outputs.conclusion }}
+          head_branch: ${{ steps.context.outputs.head_branch }}
+          head_sha: ${{ steps.context.outputs.head_sha }}
+          actor: ${{ steps.context.outputs.actor }}
+          run_url: ${{ steps.context.outputs.run_url }}
+          dry_run: ${{ steps.context.outputs.dry_run }}
+          test_case: ${{ steps.context.outputs.test_case }}
           EOF
 
-      - name: Download failed run logs
+      - name: Prepare failed run logs
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ID: ${{ steps.context.outputs.run_id }}
+          TEST_CASE: ${{ steps.context.outputs.test_case }}
         run: |
-          gh run view "$RUN_ID" --log-failed > failed-run.log ||
-            gh run view "$RUN_ID" --log > failed-run.log ||
-            true
+          set -euo pipefail
+
+          if [ "$TEST_CASE" != "none" ]; then
+            cp ".github/codex/testdata/daily-build/$TEST_CASE.log" failed-run.log
+          elif [ -n "$RUN_ID" ]; then
+            gh run view "$RUN_ID" --log-failed > failed-run.log ||
+              gh run view "$RUN_ID" --log > failed-run.log ||
+              true
+          else
+            echo "No run_id or test_case was provided." > failed-run.log
+          fi
+
           if [ ! -s failed-run.log ]; then
             echo "No logs were available from gh run view." > failed-run.log
           fi
@@ -86,6 +214,7 @@ jobs:
             echo "## Daily Build triage"
             echo
             echo "- Classification: \`$classification\`"
+            echo "- Dry run: \`${{ steps.context.outputs.dry_run }}\`"
             echo "- Should rerun: \`$should_rerun\`"
             echo "- Should open PR: \`$should_open_pr\`"
             echo
@@ -107,8 +236,10 @@ jobs:
     needs: triage
     if: >-
       ${{
+        needs.triage.outputs.dry_run != 'true' &&
         needs.triage.outputs.should_rerun == 'true' &&
-        github.event.workflow_run.run_attempt == 1
+        needs.triage.outputs.run_attempt == '1' &&
+        needs.triage.outputs.run_id != ''
       }}
     runs-on: ubuntu-latest
     permissions:
@@ -117,7 +248,7 @@ jobs:
       - name: Rerun failed jobs once
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ID: ${{ needs.triage.outputs.run_id }}
         run: gh run rerun "$RUN_ID" --failed
 
   generate_patch:
@@ -133,7 +264,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.triage.outputs.head_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -193,8 +324,12 @@ jobs:
 
   open_patch_pr:
     name: Open patch PR
-    needs: generate_patch
-    if: ${{ needs.generate_patch.outputs.has_patch == 'true' }}
+    needs: [triage, generate_patch]
+    if: >-
+      ${{
+        needs.triage.outputs.dry_run != 'true' &&
+        needs.generate_patch.outputs.has_patch == 'true'
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -202,7 +337,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.triage.outputs.head_sha }}
           fetch-depth: 0
 
       - name: Download patch artifact
@@ -213,13 +348,14 @@ jobs:
       - name: Apply patch and open PR
         env:
           GH_TOKEN: ${{ github.token }}
-          FAILED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          FAILED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
-          FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          FAILED_HEAD_BRANCH: ${{ needs.triage.outputs.head_branch }}
+          FAILED_HEAD_SHA: ${{ needs.triage.outputs.head_sha }}
+          FAILED_RUN_ID: ${{ needs.triage.outputs.run_id }}
+          FAILED_RUN_URL: ${{ needs.triage.outputs.run_url }}
         run: |
           base_branch="${FAILED_HEAD_BRANCH:-main}"
-          branch="codex/daily-build-fix-$FAILED_RUN_ID"
+          run_id="${FAILED_RUN_ID:-manual-$GITHUB_RUN_ID}"
+          branch="codex/daily-build-fix-$run_id"
 
           git apply --index codex.patch
           if git diff --cached --quiet; then
@@ -267,7 +403,8 @@ jobs:
       ${{
         always() &&
         needs.triage.result == 'success' &&
-        !(needs.triage.outputs.should_rerun == 'true' && github.event.workflow_run.run_attempt == 1) &&
+        needs.triage.outputs.dry_run != 'true' &&
+        !(needs.triage.outputs.should_rerun == 'true' && needs.triage.outputs.run_attempt == '1') &&
         needs.generate_patch.outputs.has_patch != 'true'
       }}
     runs-on: ubuntu-latest
@@ -279,8 +416,8 @@ jobs:
         env:
           CLASSIFICATION: ${{ needs.triage.outputs.classification }}
           SUMMARY: ${{ needs.triage.outputs.summary }}
-          RUN_URL: ${{ github.event.workflow_run.html_url }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ needs.triage.outputs.run_url }}
+          HEAD_SHA: ${{ needs.triage.outputs.head_sha }}
         with:
           script: |
             const classification = process.env.CLASSIFICATION || 'unknown_manual';

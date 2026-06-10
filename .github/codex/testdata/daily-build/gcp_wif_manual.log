@@ -1,0 +1,4 @@
+build	google-github-actions/auth	2026-06-10T18:01:12Z Error: google-github-actions/auth failed with: failed to generate Google Cloud federated token for //iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/github-pool/providers/github
+build	google-github-actions/auth	2026-06-10T18:01:12Z Permission 'iam.serviceAccounts.getAccessToken' denied on service account fitbit-dashboard@example.iam.gserviceaccount.com
+build	google-github-actions/auth	2026-06-10T18:01:12Z Check Workload Identity Federation provider, service account IAM policy, and GitHub repository variables.
+build	google-github-actions/auth	2026-06-10T18:01:13Z Error: Process completed with exit code 1.

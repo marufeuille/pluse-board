@@ -1,0 +1,6 @@
+build	Build Evidence	2026-06-10T18:04:01Z > pluse-board-reports@1.0.0 build
+build	Build Evidence	2026-06-10T18:04:01Z > evidence build
+build	Build Evidence	2026-06-10T18:04:03Z [Failed to load PostCSS config: Package subpath './nesting' is not defined by "exports" in /home/runner/work/pluse-board/pluse-board/reports/node_modules/tailwindcss/package.json
+build	Build Evidence	2026-06-10T18:04:03Z Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './nesting' is not defined by "exports" in node_modules/tailwindcss/package.json]
+build	Build Evidence	2026-06-10T18:04:03Z Build failed
+build	Build Evidence	2026-06-10T18:04:03Z Error: Process completed with exit code 1.
