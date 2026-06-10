@@ -1,0 +1,4 @@
+build	Check Health API freshness	2026-06-10T18:02:44Z RuntimeError: No recent Google Health API rows were found in raw.health_samples.
+build	Check Health API freshness	2026-06-10T18:02:44Z Latest sample timestamp: 2026-06-08T12:31:00Z
+build	Check Health API freshness	2026-06-10T18:02:44Z Data freshness is outside the allowed window. Check token refresh, Health API availability, and upstream data sync.
+build	Check Health API freshness	2026-06-10T18:02:45Z Error: Process completed with exit code 1.

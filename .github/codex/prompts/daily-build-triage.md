@@ -8,6 +8,9 @@ Read these files first:
 - Relevant workflow, dbt, reports, or dependency files referenced by the log
 
 Follow the automation boundaries in `AGENTS.md`.
+The log may come from a real failed run or from a synthetic dry-run test case.
+Use `daily-build-context.md` to tell which mode is being tested, but classify
+the failure from the evidence in `failed-run.log`.
 
 Classify the failure as exactly one of:
 
