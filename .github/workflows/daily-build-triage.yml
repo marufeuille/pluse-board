@@ -1,0 +1,321 @@
+name: Daily Build Triage
+
+on:
+  workflow_run:
+    workflows: ["Daily Build"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  triage:
+    name: Triage failure
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      classification: ${{ steps.parse.outputs.classification }}
+      should_rerun: ${{ steps.parse.outputs.should_rerun }}
+      should_open_pr: ${{ steps.parse.outputs.should_open_pr }}
+      summary: ${{ steps.parse.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Write triage context
+        run: |
+          cat > daily-build-context.md << EOF
+          workflow_name: ${{ github.event.workflow_run.name }}
+          workflow_run_id: ${{ github.event.workflow_run.id }}
+          workflow_run_attempt: ${{ github.event.workflow_run.run_attempt }}
+          workflow_event: ${{ github.event.workflow_run.event }}
+          workflow_conclusion: ${{ github.event.workflow_run.conclusion }}
+          head_branch: ${{ github.event.workflow_run.head_branch }}
+          head_sha: ${{ github.event.workflow_run.head_sha }}
+          actor: ${{ github.event.workflow_run.actor.login }}
+          run_url: ${{ github.event.workflow_run.html_url }}
+          EOF
+
+      - name: Download failed run logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          gh run view "$RUN_ID" --log-failed > failed-run.log ||
+            gh run view "$RUN_ID" --log > failed-run.log ||
+            true
+          if [ ! -s failed-run.log ]; then
+            echo "No logs were available from gh run view." > failed-run.log
+          fi
+
+      - name: Triage with Codex
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: read-only
+          safety-strategy: drop-sudo
+          prompt-file: .github/codex/prompts/daily-build-triage.md
+          codex-args: >-
+            ["--output-schema", ".github/codex/schemas/daily-build-triage.schema.json"]
+          output-file: codex-triage.json
+
+      - name: Parse triage result
+        id: parse
+        run: |
+          classification="$(jq -r '.classification' codex-triage.json)"
+          should_rerun="$(jq -r '.should_rerun' codex-triage.json)"
+          should_open_pr="$(jq -r '.should_open_pr' codex-triage.json)"
+
+          {
+            echo "classification=$classification"
+            echo "should_rerun=$should_rerun"
+            echo "should_open_pr=$should_open_pr"
+            echo "summary<<EOF"
+            jq -r '.summary' codex-triage.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Daily Build triage"
+            echo
+            echo "- Classification: \`$classification\`"
+            echo "- Should rerun: \`$should_rerun\`"
+            echo "- Should open PR: \`$should_open_pr\`"
+            echo
+            jq -r '.summary' codex-triage.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload triage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-build-triage
+          path: |
+            daily-build-context.md
+            failed-run.log
+            codex-triage.json
+          if-no-files-found: error
+
+  rerun:
+    name: Rerun transient failure
+    needs: triage
+    if: >-
+      ${{
+        needs.triage.outputs.should_rerun == 'true' &&
+        github.event.workflow_run.run_attempt == 1
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Rerun failed jobs once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: gh run rerun "$RUN_ID" --failed
+
+  generate_patch:
+    name: Generate patch
+    needs: triage
+    if: ${{ needs.triage.outputs.should_open_pr == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      has_patch: ${{ steps.diff.outputs.has_patch }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: reports/package-lock.json
+
+      - name: Download triage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: daily-build-triage
+          path: .codex-runtime
+
+      - name: Generate patch with Codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          prompt-file: .github/codex/prompts/daily-build-patch.md
+          codex-args: '["--ephemeral"]'
+          output-file: /tmp/codex-patch-summary.md
+
+      - name: Create patch artifact
+        id: diff
+        run: |
+          rm -rf .codex-runtime
+          git add -N .
+          git diff --binary HEAD > codex.patch
+          if [ -s codex.patch ]; then
+            echo "has_patch=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_patch=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload patch artifact
+        if: steps.diff.outputs.has_patch == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-build-codex-patch
+          path: codex.patch
+          if-no-files-found: error
+
+      - name: Upload patch summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-build-codex-patch-summary
+          path: /tmp/codex-patch-summary.md
+          if-no-files-found: ignore
+
+  open_patch_pr:
+    name: Open patch PR
+    needs: generate_patch
+    if: ${{ needs.generate_patch.outputs.has_patch == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Download patch artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: daily-build-codex-patch
+
+      - name: Apply patch and open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          FAILED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+          FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          base_branch="${FAILED_HEAD_BRANCH:-main}"
+          branch="codex/daily-build-fix-$FAILED_RUN_ID"
+
+          git apply --index codex.patch
+          if git diff --cached --quiet; then
+            echo "Patch artifact did not produce staged changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -m "Auto-fix Daily Build via Codex"
+          git push --force-with-lease origin "$branch:$branch"
+
+          {
+            echo "Codex generated this patch after Daily Build failed."
+            echo
+            echo "- Failed run: $FAILED_RUN_URL"
+            echo "- Failed commit: \`$FAILED_HEAD_SHA\`"
+            echo
+            echo "Review the changes before merging."
+          } > pr-body.md
+
+          existing_pr="$(
+            gh pr list \
+              --head "$branch" \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -n "$existing_pr" ]; then
+            gh pr comment "$existing_pr" --body-file pr-body.md
+          else
+            gh pr create \
+              --base "$base_branch" \
+              --head "$branch" \
+              --title "Auto-fix Daily Build via Codex" \
+              --body-file pr-body.md
+          fi
+
+  report_manual:
+    name: Report manual follow-up
+    needs: [triage, generate_patch]
+    if: >-
+      ${{
+        always() &&
+        needs.triage.result == 'success' &&
+        !(needs.triage.outputs.should_rerun == 'true' && github.event.workflow_run.run_attempt == 1) &&
+        needs.generate_patch.outputs.has_patch != 'true'
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create or update follow-up issue
+        uses: actions/github-script@v7
+        env:
+          CLASSIFICATION: ${{ needs.triage.outputs.classification }}
+          SUMMARY: ${{ needs.triage.outputs.summary }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const classification = process.env.CLASSIFICATION || 'unknown_manual';
+            const title = `Daily Build failed: ${classification}`;
+            const body = [
+              `Daily Build failed and requires follow-up.`,
+              ``,
+              `- Classification: \`${classification}\``,
+              `- Run: ${process.env.RUN_URL}`,
+              `- Commit: \`${process.env.HEAD_SHA}\``,
+              ``,
+              process.env.SUMMARY || 'No summary was produced.'
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              per_page: 50
+            });
+            const existing = issues.find((issue) => issue.title === title);
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body
+              });
+            }

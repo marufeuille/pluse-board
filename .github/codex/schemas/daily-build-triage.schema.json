@@ -1,0 +1,73 @@
+{
+  "type": "object",
+  "properties": {
+    "classification": {
+      "type": "string",
+      "enum": [
+        "transient_retryable",
+        "code_or_lockfile_fixable",
+        "dbt_or_report_fixable",
+        "credentials_or_gcp_manual",
+        "health_api_or_data_manual",
+        "unknown_manual"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "should_rerun": {
+      "type": "boolean"
+    },
+    "should_open_pr": {
+      "type": "boolean"
+    },
+    "suspected_step": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "suggested_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "manual_action": {
+      "type": "string"
+    },
+    "relevant_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "check_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "classification",
+    "confidence",
+    "should_rerun",
+    "should_open_pr",
+    "suspected_step",
+    "summary",
+    "evidence",
+    "suggested_actions",
+    "manual_action",
+    "relevant_files",
+    "check_commands"
+  ],
+  "additionalProperties": false
+}
