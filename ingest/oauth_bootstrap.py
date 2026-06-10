@@ -67,13 +67,15 @@ def main():
     if not auth_code:
         raise RuntimeError("認可コードを受け取れませんでした（120秒タイムアウト）")
 
-    data = urlencode({
-        "code": auth_code,
-        "client_id": args.client_id,
-        "client_secret": args.client_secret,
-        "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code",
-    }).encode()
+    data = urlencode(
+        {
+            "code": auth_code,
+            "client_id": args.client_id,
+            "client_secret": args.client_secret,
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code",
+        }
+    ).encode()
 
     req = Request(TOKEN_URI, data=data, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -82,7 +84,9 @@ def main():
 
     print("\n=== 取得した refresh token ===")
     print(token["refresh_token"])
-    print("\nこの値を GitHub Secrets の GOOGLE_HEALTH_REFRESH_TOKEN に登録してください。")
+    print(
+        "\nこの値を GitHub Secrets の GOOGLE_HEALTH_REFRESH_TOKEN に登録してください。"
+    )
 
 
 if __name__ == "__main__":

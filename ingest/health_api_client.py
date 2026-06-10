@@ -78,8 +78,8 @@ class HealthApiClient:
         filter_key = _FILTER_NAME[data_type]
         url = f"{BASE_URL}/{endpoint}/dataPoints"
         filter_str = (
-            f"{filter_key}.interval.civil_start_time >= \"{start}T00:00:00\" "
-            f"AND {filter_key}.interval.civil_start_time < \"{end}T00:00:00\""
+            f'{filter_key}.interval.civil_start_time >= "{start}T00:00:00" '
+            f'AND {filter_key}.interval.civil_start_time < "{end}T00:00:00"'
         )
 
         page_token: str | None = None
@@ -95,8 +95,10 @@ class HealthApiClient:
                 if resp.status_code == 429:
                     time.sleep(int(resp.headers.get("Retry-After", "60")))
                 elif resp.status_code in (500, 502, 503, 504):
-                    print(f"  [{attempt+1}/5] HTTP {resp.status_code}: {resp.text[:300]}")
-                    time.sleep(2 ** attempt * 5)
+                    print(
+                        f"  [{attempt + 1}/5] HTTP {resp.status_code}: {resp.text[:300]}"
+                    )
+                    time.sleep(2**attempt * 5)
                 else:
                     break
             resp.raise_for_status()

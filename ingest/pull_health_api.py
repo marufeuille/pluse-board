@@ -25,6 +25,7 @@ JST = timezone(timedelta(hours=9))
 def _today_jst() -> date:
     return datetime.now(JST).date()
 
+
 # BigQuery テーブル名は data_type と同じ（active_zone_minutes → active_zone_minutes）
 _TABLE_NAME = {
     "exercise": "exercise",
@@ -124,7 +125,9 @@ def _load_to_bq(
         autodetect=True,
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
     )
-    job = bq.load_table_from_json(rows, table_id, job_config=job_config, location=location)
+    job = bq.load_table_from_json(
+        rows, table_id, job_config=job_config, location=location
+    )
     job.result()
 
     print(f"  {data_type}: {len(rows)} 件を {table_id} に投入しました")
@@ -228,7 +231,9 @@ def main() -> None:
     elif args.data_type in ENABLED_DATA_TYPES:
         targets = [args.data_type]
     else:
-        print(f"警告: {args.data_type} は現在無効です。ENABLED_DATA_TYPES を確認してください。")
+        print(
+            f"警告: {args.data_type} は現在無効です。ENABLED_DATA_TYPES を確認してください。"
+        )
         return
 
     client = HealthApiClient()
@@ -240,8 +245,7 @@ def main() -> None:
             print(f"{dt} を取得中 ({day_start} – {day_end}) ...")
             try:
                 rows = [
-                    flatten(p)
-                    for p in client.fetch_data_points(dt, day_start, day_end)
+                    flatten(p) for p in client.fetch_data_points(dt, day_start, day_end)
                 ]
             except HTTPError as e:
                 if _can_skip_fetch_error(e, day_start, required_start, allow_stale_403):

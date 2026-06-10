@@ -3,6 +3,51 @@ title: Home
 sidebar_position: 1
 ---
 
+# ダッシュボード サマリー
+
+```sql latest_streak
+SELECT exercise_streak
+FROM bq.mart_exercise_streak
+ORDER BY activity_date DESC
+LIMIT 1
+```
+
+```sql current_week_kpi
+SELECT
+  SUM(duration_minutes) AS current_week_min
+FROM bq.mart_exercise_daily
+WHERE activity_date >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 6 DAY)
+```
+
+```sql latest_steps
+WITH today_or_yesterday AS (
+  SELECT activity_date, steps
+  FROM bq.mart_steps_daily
+  ORDER BY activity_date DESC
+  LIMIT 1
+),
+last_week AS (
+  SELECT steps AS last_week_steps
+  FROM bq.mart_steps_daily
+  WHERE activity_date = (SELECT DATE_SUB(activity_date, INTERVAL 7 DAY) FROM today_or_yesterday)
+)
+SELECT
+  t.activity_date,
+  t.steps,
+  l.last_week_steps,
+  CASE WHEN l.last_week_steps > 0 THEN (t.steps - l.last_week_steps) / l.last_week_steps ELSE 0 END AS wow_pct
+FROM today_or_yesterday t
+LEFT JOIN last_week l ON TRUE
+```
+
+<div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+  <BigValue data={latest_streak} value=exercise_streak title="連続運動日数" fmt="#,##0 日" />
+  <BigValue data={latest_steps} value=steps title="最新の歩数" fmt="#,##0" comparison=wow_pct />
+  <BigValue data={current_week_kpi} value=current_week_min title="直近7日間の運動（分）" fmt="#,##0" />
+</div>
+
+---
+
 # 週次レポート
 
 {@partial "week_options.md"}

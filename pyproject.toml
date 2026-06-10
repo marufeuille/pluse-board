@@ -11,6 +11,7 @@ ingest = [
     "google-cloud-bigquery>=3",
     "requests>=2.34.2",
     "pydantic>=2",
+    "ruff>=0.15.16",
 ]
 dbt = [
     "dbt-bigquery",

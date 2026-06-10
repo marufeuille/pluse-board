@@ -36,6 +36,11 @@ jobs:
           uv sync --frozen --only-group ingest
           uv sync --frozen --only-group dbt
 
+      - name: Run Ruff
+        run: |
+          uv run ruff check ingest/
+          uv run ruff format --check ingest/
+
   reports-lock:
     name: Reports lock
     runs-on: ubuntu-latest
