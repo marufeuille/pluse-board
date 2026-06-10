@@ -76,7 +76,7 @@ jobs:
           uv sync --only-group dbt
           cd dbt_project && uv run dbt deps && uv run dbt run
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
 
