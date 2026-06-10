@@ -38,6 +38,18 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Keep these compatibility pins aligned with Evidence rather than updating them alone.
+      - dependency-name: "@sveltejs/vite-plugin-svelte"
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
+      - dependency-name: "tailwindcss"
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"

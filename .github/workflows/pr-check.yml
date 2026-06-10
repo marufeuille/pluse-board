@@ -53,3 +53,9 @@ jobs:
 
       - name: Install report dependencies
         run: npm ci
+
+      - name: Check report dependency compatibility
+        run: npm ls @sveltejs/vite-plugin-svelte tailwindcss
+
+      - name: Build report site
+        run: npm run build
