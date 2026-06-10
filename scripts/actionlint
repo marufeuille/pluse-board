@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+version="${ACTIONLINT_VERSION:-1.7.12}"
+docker_version="${version#v}"
+go_version="$version"
+if [[ "$go_version" != v* ]]; then
+  go_version="v${go_version}"
+fi
+
+args=("$@")
+if [[ ${#args[@]} -eq 0 ]]; then
+  args=(-color)
+fi
+
+if command -v actionlint >/dev/null 2>&1; then
+  exec actionlint "${args[@]}"
+fi
+
+if command -v docker >/dev/null 2>&1; then
+  exec docker run --rm \
+    -v "$PWD:/repo" \
+    --workdir /repo \
+    "rhysd/actionlint:${docker_version}" \
+    "${args[@]}"
+fi
+
+if command -v go >/dev/null 2>&1; then
+  exec go run "github.com/rhysd/actionlint/cmd/actionlint@${go_version}" "${args[@]}"
+fi
+
+cat >&2 <<'EOF'
+actionlint is not available.
+
+Install actionlint, or install Docker or Go so this wrapper can run the pinned
+actionlint version for this repository.
+EOF
+exit 127

@@ -179,6 +179,14 @@ npm run sources   # BigQuery からデータを取得
 npm run dev       # http://localhost:3000/pluse-board
 ```
 
+### GitHub Actions workflow lint
+
+```bash
+./scripts/actionlint
+```
+
+この wrapper は、ローカルに `actionlint` があればそれを使います。なければ Docker、さらに Docker もなければ Go toolchain で、このリポジトリで pin した actionlint を実行します。
+
 ---
 
 ## データフロー
