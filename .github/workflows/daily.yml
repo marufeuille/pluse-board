@@ -24,7 +24,7 @@ jobs:
             projects/${{ vars.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github
           service_account: fitbit-dashboard@${{ vars.PROJECT_ID }}.iam.gserviceaccount.com
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
 
