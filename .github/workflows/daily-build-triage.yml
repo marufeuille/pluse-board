@@ -279,7 +279,7 @@ jobs:
           cache-dependency-path: reports/package-lock.json
 
       - name: Download triage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: daily-build-triage
           path: .codex-runtime
@@ -341,7 +341,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download patch artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: daily-build-codex-patch
 
