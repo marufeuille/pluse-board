@@ -2,7 +2,7 @@
 
 ## Repository Overview
 
-- `pluse-board` is a private health dashboard: Google Health API -> BigQuery -> dbt -> Evidence -> GitHub Pages.
+- `pluse-board` is a private health dashboard: Google Health API -> BigQuery -> SQLMesh -> Evidence -> GitHub Pages.
 - The spelling `pluse` is intentional: it combines "plus" and "pulse".
 - Treat health data, OAuth credentials, GCP settings, and GitHub secrets as sensitive.
 
@@ -20,10 +20,10 @@ Run the smallest relevant checks for the files changed.
 
 - GitHub Actions workflows: `./scripts/actionlint`
 - Python dependency metadata: `UV_CACHE_DIR=.uv-cache uv lock --check`
-- Python dependency install check: `uv sync --frozen --only-group ingest` and/or `uv sync --frozen --only-group dbt`
+- Python dependency install check: `uv sync --frozen --only-group ingest` and/or `uv sync --frozen --only-group sqlmesh`
 - Evidence dependency install check: `cd reports && npm ci`
 - Evidence build check, when report pages or sources change and BigQuery credentials are available: `cd reports && npm run sources && npm run build`
-- dbt check, when dbt models change and BigQuery credentials are available: `uv sync --only-group dbt && cd dbt_project && uv run dbt deps && uv run dbt run`
+- SQLMesh check, when models change and BigQuery + state credentials are available: `uv sync --only-group sqlmesh && cd sqlmesh_project && uv run sqlmesh plan dev`
 
 If a check cannot run because it needs external credentials, network access, Docker daemon access, or GCP access, say that clearly and run the closest local/static check instead.
 
@@ -45,6 +45,6 @@ If a check cannot run because it needs external credentials, network access, Doc
 
 For scheduled or background agents:
 
-- If Daily Build fails due to an obvious code, workflow, lockfile, dbt, or report issue, it is acceptable to propose or prepare a minimal PR.
+- If Daily Build fails due to an obvious code, workflow, lockfile, SQLMesh, or report issue, it is acceptable to propose or prepare a minimal PR.
 - If the failure appears related to Health API availability, token refresh, BigQuery data freshness, GCP IAM, WIF, GitHub Pages settings, GitHub Secrets, or GitHub Variables, do not attempt an automatic fix. Report the likely cause and the manual action needed.
 - Never rotate secrets, alter IAM, change repository security settings, or bypass branch protection from automation.

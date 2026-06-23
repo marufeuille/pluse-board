@@ -24,7 +24,9 @@ dbt_project/.user.yml
 # SQLMesh
 sqlmesh_project/sqlmesh_state.db*
 sqlmesh_project/.cache/
-sqlmesh_project/logs/
+logs/
+.cache/
+.uv-cache/
 
 # Evidence
 reports/.evidence/
