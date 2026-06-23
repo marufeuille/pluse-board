@@ -55,5 +55,7 @@ SELECT
       AVG(load) OVER (ORDER BY d ROWS BETWEEN 6  PRECEDING AND CURRENT ROW),
       AVG(load) OVER (ORDER BY d ROWS BETWEEN 27 PRECEDING AND CURRENT ROW)
     )
-  END AS acwr
+  END AS acwr,
+  -- review 導線コメントのデモ用ダミー列。マージ前に剥がす。
+  TRUE AS _bot_review_demo
 FROM filled
