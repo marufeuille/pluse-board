@@ -1,0 +1,53 @@
+name: SQLMesh Bot
+
+# PR を開く / 更新するたびに SQLMesh CI/CD bot を起動し、
+# PR ごとの preview 環境で plan を実行して結果を PR チェック + コメントに出す。
+# prod への反映はここでは行わない（マージ後 main への push を Daily Build が拾う）。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# 後続 push が来たら走行中の plan をキャンセルし、最新コミットだけ評価する。
+concurrency:
+  group: sqlmesh-bot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write   # PR コメント投稿
+  checks: write          # plan プレビュー等のチェック作成
+  id-token: write        # WIF 認証（BigQuery）
+
+jobs:
+  plan-preview:
+    name: PR plan preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: >-
+            projects/${{ vars.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: fitbit-dashboard@${{ vars.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install SQLMesh
+        run: uv sync --only-group sqlmesh
+
+      # bot は config の default_gateway を使うため、SQLMESH__DEFAULT_GATEWAY=ci で
+      # state を Neon(Postgres) に向ける（Daily Build と同じ state を共有）。
+      - name: Run SQLMesh CI/CD bot (plan preview)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+          SQLMESH__DEFAULT_GATEWAY: ci
+          SQLMESH_STATE_HOST: ${{ secrets.SQLMESH_STATE_HOST }}
+          SQLMESH_STATE_USER: ${{ secrets.SQLMESH_STATE_USER }}
+          SQLMESH_STATE_PASSWORD: ${{ secrets.SQLMESH_STATE_PASSWORD }}
+        run: |
+          uv run sqlmesh_cicd -p sqlmesh_project github run-all

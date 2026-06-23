@@ -2,7 +2,9 @@
 name = "pluse-board"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "sqlmesh[web]>=0.235.4",
+]
 
 [dependency-groups]
 ingest = [
@@ -12,10 +14,12 @@ ingest = [
     "requests>=2.34.2",
     "pydantic>=2",
 ]
-# SQLMesh: bigquery=データ接続, postgres=state 接続(Neon)。
+# SQLMesh: bigquery=データ接続, postgres=state 接続(Neon), github=CI/CD bot。
 # state は psycopg2-binary を使う（sqlmesh[postgres] は libpq ビルドが要る
 # psycopg2 を引くため、macOS ローカル等で失敗する。binary 版で wheel 配布）。
+# github extra は PyGithub を引く（sqlmesh_cicd github が PR チェック/コメントに使う）。
 sqlmesh = [
     "sqlmesh[bigquery]",
+    "sqlmesh[github]",
     "psycopg2-binary",
 ]
