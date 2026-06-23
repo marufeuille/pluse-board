@@ -55,5 +55,7 @@ SELECT
       AVG(load) OVER (ORDER BY d ROWS BETWEEN 6  PRECEDING AND CURRENT ROW),
       AVG(load) OVER (ORDER BY d ROWS BETWEEN 27 PRECEDING AND CURRENT ROW)
     )
-  END AS acwr
+  END AS acwr,
+  -- SQLMesh CI/CD bot 動作確認用のダミー列。マージしない（このPRは検証専用）。
+  TRUE AS _bot_smoke_test
 FROM filled
