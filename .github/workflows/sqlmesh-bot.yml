@@ -51,3 +51,18 @@ jobs:
           SQLMESH_STATE_PASSWORD: ${{ secrets.SQLMESH_STATE_PASSWORD }}
         run: |
           uv run sqlmesh_cicd -p sqlmesh_project github run-all
+
+      # 公式 bot のコメントは入口だけなので、レビュー導線（Checks リンク / BigQuery
+      # リンク / リネージ図）を1枚にまとめた sticky コメントを追加で出す。
+      # 補助機能なので bot が失敗しても出せるよう always()。リネージは SQLMesh の
+      # ローカル DAG だけで作るため BigQuery 接続は不要。
+      - name: Post review links comment
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_ENV: pluse_board_${{ github.event.pull_request.number }}
+          GCP_PROJECT: ${{ vars.PROJECT_ID }}
+        run: |
+          uv run python scripts/sqlmesh_pr_comment.py
