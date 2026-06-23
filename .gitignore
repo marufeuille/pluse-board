@@ -21,6 +21,11 @@ dbt_project/logs/
 dbt_project/profiles.yml
 dbt_project/.user.yml
 
+# SQLMesh
+sqlmesh_project/sqlmesh_state.db*
+sqlmesh_project/.cache/
+sqlmesh_project/logs/
+
 # Evidence
 reports/.evidence/
 reports/build/

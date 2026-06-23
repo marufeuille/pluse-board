@@ -1,0 +1,52 @@
+# SQLMesh 設定。dbt の profiles.yml + dbt_project.yml に相当。
+#
+# SQLMesh は状態(snapshot/environment)を持つツールで、ほぼ全コマンドが最初に
+# state を読みに行く。そこで gateway を 2 つに分ける:
+#
+#   - bigquery (ローカル既定): データ=BigQuery, state=ローカル DuckDB ファイル。
+#                              外部 DB 不要で即実行できる。dev 環境の実験用。
+#   - ci      (CI/本番デプロイ): データ=BigQuery, state=Neon(Postgres)。
+#                              ephemeral な GitHub Actions でも state を永続化する。
+#                              BigQuery 自体を state に使うのは非推奨なので別 DB を使う。
+#
+# 本番(prod)へのデプロイは必ず ci gateway 経由で行うこと（state を一本化するため）。
+# ローカルでは `sqlmesh plan dev` のように dev 環境のみを扱う。
+#
+# 環境変数:
+#   PROJECT_ID                  GCP プロジェクト（既定 pluse-board）
+#   BQ_LOCATION                 BigQuery ロケーション（既定 asia-northeast1）
+#   SQLMESH_STATE_HOST/USER/PASSWORD/DB   ci gateway の Neon 接続（CI のみ必須）
+
+gateways:
+  bigquery:
+    connection:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('PROJECT_ID', 'pluse-board') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-northeast1') }}"
+    state_connection:
+      type: duckdb
+      database: sqlmesh_state.db
+
+  ci:
+    connection:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('PROJECT_ID', 'pluse-board') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-northeast1') }}"
+    state_connection:
+      type: postgres
+      host: "{{ env_var('SQLMESH_STATE_HOST', '') }}"
+      port: 5432
+      database: "{{ env_var('SQLMESH_STATE_DB', 'sqlmesh') }}"
+      user: "{{ env_var('SQLMESH_STATE_USER', '') }}"
+      password: "{{ env_var('SQLMESH_STATE_PASSWORD', '') }}"
+      # Neon は SSL 必須。psycopg に sslmode を渡す。
+      sslmode: require
+
+default_gateway: bigquery
+
+model_defaults:
+  dialect: bigquery
+  # データの最古日。incremental の backfill 開始点。
+  start: 2026-04-01

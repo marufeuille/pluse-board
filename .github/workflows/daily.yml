@@ -50,31 +50,32 @@ jobs:
         run: |
           uv run python ingest/check_health_data_freshness.py
 
-      - name: Generate dbt profiles.yml
-        run: |
-          mkdir -p ~/.dbt
-          cat > ~/.dbt/profiles.yml << EOF
-          pluse_board:
-            target: ci
-            outputs:
-              ci:
-                type: bigquery
-                method: oauth
-                project: ${{ vars.PROJECT_ID }}
-                dataset: ${{ vars.BQ_DATASET_MART || 'fitbit_mart' }}
-                location: ${{ vars.BQ_LOCATION || 'asia-northeast1' }}
-                threads: 4
-          EOF
-
-      - name: Run dbt
+      # SQLMesh: コード変更(push)はモデル差分を prod に適用、
+      # データ更新(schedule/dispatch)は incremental 区間を前進実行。
+      # state は Neon(Postgres) に永続化（SQLMESH_STATE_* secrets）。
+      - name: Apply SQLMesh model changes (deploy)
+        if: github.event_name == 'push'
         env:
           PROJECT_ID: ${{ vars.PROJECT_ID }}
-          BQ_DATASET_RAW: ${{ vars.BQ_DATASET_RAW }}
-          BQ_DATASET_MART: ${{ vars.BQ_DATASET_MART }}
           BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+          SQLMESH_STATE_HOST: ${{ secrets.SQLMESH_STATE_HOST }}
+          SQLMESH_STATE_USER: ${{ secrets.SQLMESH_STATE_USER }}
+          SQLMESH_STATE_PASSWORD: ${{ secrets.SQLMESH_STATE_PASSWORD }}
         run: |
-          uv sync --only-group dbt
-          cd dbt_project && uv run dbt deps && uv run dbt run
+          uv sync --only-group sqlmesh
+          cd sqlmesh_project && uv run sqlmesh --gateway ci plan --auto-apply --no-prompts
+
+      - name: Run SQLMesh (advance intervals)
+        if: github.event_name != 'push'
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+          SQLMESH_STATE_HOST: ${{ secrets.SQLMESH_STATE_HOST }}
+          SQLMESH_STATE_USER: ${{ secrets.SQLMESH_STATE_USER }}
+          SQLMESH_STATE_PASSWORD: ${{ secrets.SQLMESH_STATE_PASSWORD }}
+        run: |
+          uv sync --only-group sqlmesh
+          cd sqlmesh_project && uv run sqlmesh --gateway ci run
 
       - uses: actions/setup-node@v6
         with:

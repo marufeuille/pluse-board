@@ -34,7 +34,7 @@ jobs:
       - name: Install Python dependency groups
         run: |
           uv sync --frozen --only-group ingest
-          uv sync --frozen --only-group dbt
+          uv sync --frozen --only-group sqlmesh
 
   reports-lock:
     name: Reports lock

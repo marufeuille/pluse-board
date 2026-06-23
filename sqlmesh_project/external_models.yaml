@@ -1,0 +1,27 @@
+- name: fitbit_raw.exercise
+  description: Google Health API から取得した運動セッションデータ（生 JSON）
+  columns:
+    raw: STRING
+- name: fitbit_raw.steps
+  description: Google Health API から取得した歩数データ（生 JSON）
+  columns:
+    raw: STRING
+- name: fitbit_raw.active_zone_minutes
+  description: Google Health API から取得したアクティブゾーン分（生 JSON, ACWR 計算用）
+  columns:
+    raw: STRING
+- name: '`pluse-board`.`fitbit_raw`.`active_zone_minutes`'
+  columns:
+    raw: STRING
+    name: STRING
+  gateway: bigquery
+- name: '`pluse-board`.`fitbit_raw`.`exercise`'
+  columns:
+    raw: STRING
+    name: STRING
+  gateway: bigquery
+- name: '`pluse-board`.`fitbit_raw`.`steps`'
+  columns:
+    raw: STRING
+    name: STRING
+  gateway: bigquery
