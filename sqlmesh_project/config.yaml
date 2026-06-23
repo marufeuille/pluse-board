@@ -46,6 +46,21 @@ gateways:
 
 default_gateway: bigquery
 
+# SQLMesh CI/CD bot（GitHub Actions）。
+# .github/workflows/sqlmesh-bot.yml が `sqlmesh_cicd ... github run-all` を実行し、
+# PR ごとに preview 環境を作って plan を PR チェック / コメントに出す。
+#
+# prod への反映はここでは行わない（マージ後 main への push を Daily Build が拾って
+# `sqlmesh ci plan --auto-apply` でデプロイする）ため enable_deploy_command は false。
+#
+# bot は default_gateway を使うので、ワークフロー側で SQLMESH__DEFAULT_GATEWAY=ci を
+# 渡して state を Neon(Postgres) に向ける（ローカルは bigquery=DuckDB のまま）。
+cicd_bot:
+  type: github
+  enable_deploy_command: false
+  # PR 環境は plan の差分プレビューのみ作り、実データの backfill はしない（BigQuery コスト最小化）。
+  skip_pr_backfill: true
+
 model_defaults:
   dialect: bigquery
   # データの最古日。incremental の backfill 開始点。
