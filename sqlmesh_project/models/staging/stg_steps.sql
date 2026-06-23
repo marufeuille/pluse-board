@@ -1,3 +1,8 @@
+MODEL (
+  name fitbit_staging.stg_steps,
+  kind VIEW
+);
+
 -- Health API は同じ歩数を Fitbit と Health Connect の両ソースから返す。
 -- 時間帯がミリ秒単位でズレているので集約では排除できない。
 -- Fitbit アプリ表示と一致させるため、platform = FITBIT のみ採用する。
@@ -6,7 +11,7 @@
 -- 重複登録されるため、startTime ごとに1件に絞る (stg_active_zone_minutes と同じパターン)。
 WITH fitbit_only AS (
   SELECT raw
-  FROM {{ source('fitbit_raw', 'steps') }}
+  FROM fitbit_raw.steps
   WHERE JSON_VALUE(raw, '$.dataSource.platform') = 'FITBIT'
     AND JSON_VALUE(raw, '$.steps.interval.startTime') IS NOT NULL
 ),

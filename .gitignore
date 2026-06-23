@@ -14,12 +14,12 @@ env/
 .env.*
 !.env.example
 
-# dbt
-dbt_project/target/
-dbt_project/dbt_packages/
-dbt_project/logs/
-dbt_project/profiles.yml
-dbt_project/.user.yml
+# SQLMesh
+sqlmesh_project/sqlmesh_state.db*
+sqlmesh_project/.cache/
+logs/
+.cache/
+.uv-cache/
 
 # Evidence
 reports/.evidence/

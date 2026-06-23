@@ -1,6 +1,6 @@
 # pluse-board
 
-Google Health API で取得した健康データ（運動・歩数・アクティブゾーン分）を、BigQuery → dbt → Evidence → GitHub Pages で可視化するダッシュボード。
+Google Health API で取得した健康データ（運動・歩数・アクティブゾーン分）を、BigQuery → SQLMesh → Evidence → GitHub Pages で可視化するダッシュボード。
 
 > **プロジェクト名について**
 > `pluse` は **plus**（健康にプラス）と **pulse**（健康の鼓動・脈動）を組み合わせた造語です。typo ではなく意図的な綴りです。
@@ -16,7 +16,7 @@ flowchart TD
     Pages[GitHub Pages]
 
     GH -->|Python 日次取得| Raw
-    Raw -->|dbt-bigquery| Mart
+    Raw -->|SQLMesh| Mart
     GA -.読み取り.-> Mart
     GA -->|Evidence build| Pages
 ```
@@ -115,6 +115,9 @@ gcloud iam service-accounts add-iam-policy-binding ${SA} \
 | `GOOGLE_HEALTH_CLIENT_ID` | OAuth クライアント ID |
 | `GOOGLE_HEALTH_CLIENT_SECRET` | OAuth クライアントシークレット |
 | `GOOGLE_HEALTH_REFRESH_TOKEN` | 手順 3 で取得した refresh token |
+| `SQLMESH_STATE_HOST` | SQLMesh state 用 Postgres のホスト（手順 7 の Neon） |
+| `SQLMESH_STATE_USER` | 同 ユーザー |
+| `SQLMESH_STATE_PASSWORD` | 同 パスワード |
 
 #### Variables（非機密の設定値）
 
@@ -132,6 +135,17 @@ gcloud iam service-accounts add-iam-policy-binding ${SA} \
 - Source: **GitHub Actions** を選択
 
 > **注意**: 健康データを含むため、リポジトリは **Private** に設定してください（GitHub Pages は Pro プラン以上で Private リポジトリにも対応）。
+
+### 7. SQLMesh state backend（Neon Postgres）準備
+
+SQLMesh は snapshot/environment の状態を永続化する必要があり、ephemeral な CI でも参照できる外部 DB を使う（BigQuery 自体を state に使うのは非推奨）。無料枠で十分なので [Neon](https://neon.tech) を使う。
+
+1. Neon でプロジェクトを作成し、`sqlmesh` という名前の database を用意（既定 DB をそのまま使う場合は config の `SQLMESH_STATE_DB` で名前を合わせる）
+2. 接続情報（host / user / password）を控える
+3. 手順 5 の Secrets に `SQLMESH_STATE_HOST` / `SQLMESH_STATE_USER` / `SQLMESH_STATE_PASSWORD` として登録
+4. ローカルでも同じ環境変数を `.env` / direnv 等で設定（`sqlmesh_project/config.yaml` が参照）
+
+> GCP に寄せたい場合は Cloud SQL (Postgres) でも可。その場合は接続情報を上記 secrets に入れ替えるだけで、モデルや CI の変更は不要。
 
 ---
 
@@ -153,22 +167,59 @@ uv run python ingest/pull_health_api.py
 uv run python ingest/check_health_data_freshness.py
 ```
 
-### dbt 動作確認
+### SQLMesh 動作確認
 
-`dbt_project/profiles.yml` をテンプレート（`profiles.yml.example`）からコピーして作成してください。このファイルは gitignore 済みなのでリポジトリには含まれません。
-
-```bash
-cp dbt_project/profiles.yml.example dbt_project/profiles.yml
-# YOUR_PROJECT_ID を実際の値に書き換える
-```
-
-事前に `gcloud auth application-default login` で認証してから:
+ローカルは既定 gateway（`bigquery`）を使い、state はローカルの DuckDB ファイル（`sqlmesh_state.db`）に保存される。外部 DB は不要で、**必要なのは BigQuery 認証だけ**:
 
 ```bash
+gcloud auth application-default login
+
 # リポジトリルートで実行
-uv sync --only-group dbt
-cd dbt_project && uv run dbt deps && uv run dbt run
+uv sync --only-group sqlmesh
+cd sqlmesh_project
+
+# raw テーブルの外部モデル定義を実テーブルから再生成（初回のみ）
+uv run sqlmesh create_external_models
+
+# dev 仮想環境にモデルを構築（dialect エラーはここで検出）。state はローカル DuckDB。
+uv run sqlmesh plan dev
+
+# audits（not_null / unique_values）の実行
+uv run sqlmesh audit
 ```
+
+本番(prod)への反映は **state を一本化するため必ず CI gateway（Neon）経由**で行う。ローカルから手動で打つ場合も `--gateway ci` を使い、手順 7 の `SQLMESH_STATE_*` を設定しておく:
+
+```bash
+uv run sqlmesh --gateway ci plan        # fitbit_mart.mart_* ビューを公開
+```
+
+> **dbt とのパリティ確認**: dbt は `fitbit_mart.mart_*`、SQLMesh dev は `fitbit_mart__dev.mart_*` に出力される。dbt は SQLMesh の管理環境ではないので、BigQuery で双方向 `EXCEPT DISTINCT` の件数が 0 かを見る（下記）。SQLMesh 同士（例: cutover 後の prod ⇔ dev）の比較は `uv run sqlmesh table_diff prod:dev '<model>'` が使える。
+>
+> ```sql
+> -- 0 ならパリティOK（例: mart_steps_daily。PROJECT_ID は実値に置換）
+> SELECT COUNT(*) AS diff_rows FROM (
+>   (SELECT * FROM `PROJECT_ID.fitbit_mart.mart_steps_daily`
+>    EXCEPT DISTINCT
+>    SELECT * FROM `PROJECT_ID.fitbit_mart__dev.mart_steps_daily`)
+>   UNION ALL
+>   (SELECT * FROM `PROJECT_ID.fitbit_mart__dev.mart_steps_daily`
+>    EXCEPT DISTINCT
+>    SELECT * FROM `PROJECT_ID.fitbit_mart.mart_steps_daily`)
+> );
+> ```
+
+#### マルチユーザー運用メモ
+
+ローカルの state は `sqlmesh_state.db`（DuckDB ファイル、gitignore 済み）で、**マシンローカルなキャッシュ的状態**。同じマシンでは永続化されるので `dev` は毎回作り直されず差分のみ backfill される（消す/別マシンで clone したときだけ再構築）。state DB をコミットしないのは正しい（バイナリ衝突や他人の fingerprint 混入を避けるため）。
+
+ただし**複数人で開発する場合**、衝突するのは state ファイル（各自別物）ではなく、BigQuery 上で共有される **`dev` という環境名**（`fitbit_mart__dev` のビューを取り合う）。チーム運用では:
+
+- **開発者ごとに環境を分ける**: `uv run sqlmesh plan dev_$USER` → `fitbit_mart__dev_<name>` に隔離される。仮想環境はビューだけなので安価。
+- **state backend を共有する**（ローカルでも `--gateway ci` の Neon を使う）と、prod の物理テーブルを fingerprint で再利用してゼロコピーで環境を作れる（SQLMesh の本領）。ローカル throwaway state ではこの恩恵は得られない。
+- dev 環境は既定 TTL（約1週間）で自動失効し、`sqlmesh run` 内蔵の `janitor` が期限切れ環境と未参照の物理テーブルを掃除する。
+
+> 本リポジトリは単一ユーザー前提なので、当面は既定 gateway（ローカル DuckDB state）＋ `dev` のままで問題ない。チーム化・本格運用時に上記へ移行する。
 
 ### Evidence 動作確認
 
@@ -194,7 +245,7 @@ npm run dev       # http://localhost:3000/pluse-board
 | レイヤー | BigQuery データセット | 内容 |
 |---|---|---|
 | raw | `fitbit_raw` | Health API から取得したデータをそのまま格納 |
-| mart | `fitbit_mart` | dbt で集計・変換したレポート用テーブル |
+| mart | `fitbit_mart` | SQLMesh で集計・変換したレポート用テーブル |
 
 ### raw テーブル
 

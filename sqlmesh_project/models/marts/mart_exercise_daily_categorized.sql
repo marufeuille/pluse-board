@@ -1,3 +1,15 @@
+MODEL (
+  name fitbit_mart.mart_exercise_daily_categorized,
+  kind INCREMENTAL_BY_TIME_RANGE (
+    time_column activity_date
+  ),
+  cron '@daily',
+  grain (activity_date, category),
+  audits (
+    not_null(columns := (activity_date, category, duration_minutes))
+  )
+);
+
 -- WALKING は AZM/active 分 >= 0.5 をパワーウォークとして区別する。
 -- STRENGTH_TRAINING は筋トレ。それ以外（Fitbit「Other」を含む）は「その他運動」に集約。
 WITH classified AS (
@@ -12,7 +24,8 @@ WITH classified AS (
       ELSE 'その他運動'
     END AS category,
     TIMESTAMP_DIFF(end_time, start_time, MINUTE) AS duration_minutes
-  FROM {{ ref('stg_exercise') }}
+  FROM fitbit_staging.stg_exercise
+  WHERE DATE(start_time, 'Asia/Tokyo') BETWEEN @start_ds AND @end_ds
 )
 SELECT
   activity_date,

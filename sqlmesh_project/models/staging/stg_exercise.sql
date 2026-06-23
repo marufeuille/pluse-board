@@ -1,6 +1,11 @@
+MODEL (
+  name fitbit_staging.stg_exercise,
+  kind VIEW
+);
+
 WITH deduped AS (
   SELECT raw
-  FROM {{ source('fitbit_raw', 'exercise') }}
+  FROM fitbit_raw.exercise
   QUALIFY ROW_NUMBER() OVER (PARTITION BY JSON_VALUE(raw, '$.name') ORDER BY 1) = 1
 )
 SELECT

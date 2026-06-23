@@ -1,3 +1,17 @@
+MODEL (
+  name fitbit_mart.mart_acwr,
+  kind FULL,
+  cron '@daily',
+  grain d,
+  audits (
+    not_null(columns := (d, load)),
+    unique_values(columns := (d))
+  )
+);
+
+-- 28日トレーリング窓の rolling 平均を全期間に対して計算するため FULL。
+-- incremental 化するなら time_column = d + lookback 28 が必要（応用課題）。
+--
 -- 休養日を 0 埋めしないと rolling 平均が過大評価されるため calendar JOIN は必須。
 -- 上限は CURRENT_DATE ではなく ingest 済みの最終日に揃える。steps/exercise が
 -- 入っている日は AZM が 0 でも「取得済み」とみなし、末尾の休養日も ACWR に含める。
@@ -5,14 +19,14 @@ WITH daily_load AS (
   SELECT
     activity_date AS d,
     load
-  FROM {{ ref('mart_load_daily') }}
+  FROM fitbit_mart.mart_load_daily
 ),
 available_days AS (
   SELECT d FROM daily_load
   UNION DISTINCT
-  SELECT activity_date AS d FROM {{ ref('mart_steps_daily') }}
+  SELECT activity_date AS d FROM fitbit_mart.mart_steps_daily
   UNION DISTINCT
-  SELECT activity_date AS d FROM {{ ref('mart_exercise_daily') }}
+  SELECT activity_date AS d FROM fitbit_mart.mart_exercise_daily
 ),
 calendar AS (
   SELECT d

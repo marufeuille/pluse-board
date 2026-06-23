@@ -1,6 +1,11 @@
+MODEL (
+  name fitbit_staging.stg_active_zone_minutes,
+  kind VIEW
+);
+
 WITH deduped AS (
   SELECT raw
-  FROM {{ source('fitbit_raw', 'active_zone_minutes') }}
+  FROM fitbit_raw.active_zone_minutes
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY
       JSON_VALUE(raw, '$.activeZoneMinutes.interval.startTime'),
