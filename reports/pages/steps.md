@@ -1,6 +1,6 @@
 ---
 title: Steps
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 # 歩数の推移
