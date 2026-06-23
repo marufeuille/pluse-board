@@ -12,13 +12,9 @@ ingest = [
     "requests>=2.34.2",
     "pydantic>=2",
 ]
-dbt = [
-    "dbt-bigquery",
-]
-# SQLMesh への移行用。bigquery=データ接続, postgres=state 接続(Neon)。
+# SQLMesh: bigquery=データ接続, postgres=state 接続(Neon)。
 # state は psycopg2-binary を使う（sqlmesh[postgres] は libpq ビルドが要る
 # psycopg2 を引くため、macOS ローカル等で失敗する。binary 版で wheel 配布）。
-# パリティ確認が済んだら dbt グループは削除する。
 sqlmesh = [
     "sqlmesh[bigquery]",
     "psycopg2-binary",
