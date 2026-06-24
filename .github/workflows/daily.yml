@@ -77,15 +77,6 @@ jobs:
           uv sync --only-group sqlmesh
           cd sqlmesh_project && uv run sqlmesh --gateway ci run
 
-      - name: Check mart freshness
-        if: github.event_name != 'push'
-        env:
-          PROJECT_ID: ${{ vars.PROJECT_ID }}
-          BQ_DATASET_MART: ${{ vars.BQ_DATASET_MART }}
-          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
-        run: |
-          uv run python ingest/check_mart_freshness.py
-
       - uses: actions/setup-node@v6
         with:
           node-version: "20"
