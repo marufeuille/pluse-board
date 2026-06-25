@@ -48,3 +48,20 @@ For scheduled or background agents:
 - If Daily Build fails due to an obvious code, workflow, lockfile, SQLMesh, or report issue, it is acceptable to propose or prepare a minimal PR.
 - If the failure appears related to Health API availability, token refresh, BigQuery data freshness, GCP IAM, WIF, GitHub Pages settings, GitHub Secrets, or GitHub Variables, do not attempt an automatic fix. Report the likely cause and the manual action needed.
 - Never rotate secrets, alter IAM, change repository security settings, or bypass branch protection from automation.
+
+## Issue Tracking
+
+This project uses **bd (beads)** for issue tracking. Run `bd prime` for full workflow context.
+
+- `bd ready` — find unblocked work
+- `bd create "Title" -t task -p 2` — create issue (types: bug/feature/task/epic/chore; priorities 0-4)
+- `bd update <id> --claim` — claim work atomically
+- `bd close <id>` — mark complete
+- `bd list --status=open` / `bd search "text"` — list / search issues
+
+Use `bd` for ALL task tracking in this project — do NOT use TodoWrite, TaskCreate, or markdown TODO lists.
+
+**Sync:** the source of truth is the DoltHub remote for this repo.
+- `bd dolt pull` — sync latest before starting work
+- `bd dolt push` — sync your changes back at end of session
+- Do not hand-edit `.beads/issues.jsonl`; use `bd` commands.
