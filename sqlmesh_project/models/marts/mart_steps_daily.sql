@@ -7,7 +7,8 @@ MODEL (
   grain activity_date,
   audits (
     not_null(columns := (activity_date, steps)),
-    unique_values(columns := (activity_date))
+    unique_values(columns := (activity_date)),
+    assert_data_in_range
   )
 );
 
