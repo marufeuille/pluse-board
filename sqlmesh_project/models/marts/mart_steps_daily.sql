@@ -8,7 +8,7 @@ MODEL (
   audits (
     not_null(columns := (activity_date, steps)),
     unique_values(columns := (activity_date)),
-    assert_interval_not_empty
+    assert_data_in_range
   )
 );
 
