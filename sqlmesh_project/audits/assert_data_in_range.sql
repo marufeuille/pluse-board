@@ -1,4 +1,4 @@
-AUDIT (name assert_data_in_range, blocking := true);
+AUDIT (name assert_data_in_range);
 
 -- 処理されたインターバルに行が1件もない場合に失敗する。
 -- 行を返す = 失敗、行なし = 成功（SQLMesh audit の規約）。
