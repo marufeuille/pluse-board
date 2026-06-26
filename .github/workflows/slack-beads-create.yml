@@ -1,0 +1,159 @@
+name: Slack Beads Create
+
+# Triggered by Cloudflare Workers (repository_dispatch, event_type=slack-task) after
+# GPT structures a Slack /task message, or manually via workflow_dispatch for testing
+# the bd path without deploying the Worker.
+
+on:
+  repository_dispatch:
+    types: [slack-task]
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "Issue title"
+        required: true
+        type: string
+      type:
+        description: "Issue type"
+        required: true
+        type: choice
+        options: [bug, task, feature]
+        default: task
+      priority:
+        description: "Priority (0-4, 0=highest)"
+        required: true
+        type: string
+        default: "2"
+      body:
+        description: "Issue description"
+        required: true
+        type: string
+      channel_id:
+        description: "Slack channel to notify on completion (omit to skip notification)"
+        required: false
+        type: string
+      dry_run:
+        description: "Preview only (bd --dry-run, skip push and notification)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Serialize bd writes to avoid DoltHub push races.
+concurrency:
+  group: beads-slack
+  cancel-in-progress: false
+
+jobs:
+  create:
+    name: Create beads issue from Slack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-bd
+
+      - name: Create or update beads issue
+        id: beads
+        env:
+          CP_TITLE: ${{ github.event.client_payload.title }}
+          CP_TYPE: ${{ github.event.client_payload.type }}
+          CP_PRIORITY: ${{ github.event.client_payload.priority }}
+          CP_DESCRIPTION: ${{ github.event.client_payload.description }}
+          CP_RAW_TEXT: ${{ github.event.client_payload.raw_text }}
+          CP_CHANNEL_ID: ${{ github.event.client_payload.channel_id }}
+          CP_CORRELATION_ID: ${{ github.event.client_payload.correlation_id }}
+          CP_USER: ${{ github.event.client_payload.user }}
+          IN_TITLE: ${{ inputs.title }}
+          IN_TYPE: ${{ inputs.type }}
+          IN_PRIORITY: ${{ inputs.priority }}
+          IN_BODY: ${{ inputs.body }}
+          IN_CHANNEL_ID: ${{ inputs.channel_id }}
+          IN_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # Normalize inputs across repository_dispatch (client_payload) and workflow_dispatch (inputs).
+          title="${CP_TITLE:-$IN_TITLE}"
+          : "${title:?title is required}"
+
+          type="${CP_TYPE:-$IN_TYPE}"
+          case "$type" in bug|task|feature) ;; *) type="task" ;; esac
+
+          priority="${CP_PRIORITY:-$IN_PRIORITY}"
+          case "$priority" in 0|1|2|3|4) ;; *) priority="2" ;; esac
+
+          description="${CP_DESCRIPTION:-$IN_BODY}"
+          : "${description:?description is required}"
+          raw_text="${CP_RAW_TEXT:-}"
+          channel_id="${CP_CHANNEL_ID:-$IN_CHANNEL_ID}"
+          correlation_id="${CP_CORRELATION_ID:-}"
+          user="${CP_USER:-}"
+          dry_run="${IN_DRY_RUN:-false}"
+
+          # Build the issue body (markdown), preserving the raw /task text for traceability.
+          body="$(printf '## 内容\n\n%s' "$description")"
+          if [ -n "$raw_text" ]; then
+            body="$(printf '%s\n\n## 元のメッセージ (/task)\n\n> %s' "$body" "$raw_text")"
+          fi
+          if [ -n "$user" ]; then
+            body="$(printf '%s\n\n- 起票者: %s' "$body" "$user")"
+          fi
+
+          create_args=(--type "$type" --priority "$priority" --labels slack --body-file -)
+          if [ -n "$correlation_id" ]; then
+            create_args+=(--external-ref "slack-$correlation_id")
+          fi
+
+          # De-duplicate by title (pattern reused from daily-build-triage create_beads_issue).
+          existing="$(bd search "$title" --json 2>/dev/null | jq -r '.[0].id // empty' || true)"
+
+          if [ -n "$existing" ]; then
+            action="updated"
+            id="$existing"
+            if [ "$dry_run" != "true" ]; then
+              bd comment "$existing" --body "$body"
+            fi
+          else
+            action="created"
+            if [ "$dry_run" = "true" ]; then
+              printf '%s' "$body" | bd create "$title" "${create_args[@]}" --dry-run || true
+              id="dry-run"
+            else
+              id="$(printf '%s' "$body" | bd create "$title" "${create_args[@]}" --silent)"
+            fi
+          fi
+
+          if [ "$action" = "created" ]; then
+            slack_text="✅ 起票しました $id — $title"
+          else
+            slack_text="📝 既存の issue $id に追記しました — $title"
+          fi
+
+          # Build the Slack payload as a JSON file (jq guarantees validity; avoids YAML quoting issues).
+          jq -nc --arg channel "$channel_id" --arg text "$slack_text" \
+            '{channel: $channel, text: $text}' > slack-payload.json
+
+          {
+            echo "id=$id"
+            echo "action=$action"
+            echo "channel_id=$channel_id"
+            echo "dry_run=$dry_run"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "beads $action: $id (dry_run=$dry_run)"
+
+      - name: Sync to DoltHub
+        if: ${{ steps.beads.outputs.dry_run != 'true' }}
+        run: |
+          set -euo pipefail
+          bd dolt push || (bd dolt pull --force && bd dolt push)
+
+      - name: Notify Slack
+        if: ${{ steps.beads.outputs.dry_run != 'true' && steps.beads.outputs.channel_id != '' }}
+        uses: slackapi/slack-github-action@v2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload-file-path: ./slack-payload.json

@@ -1,0 +1,14 @@
+name = "beads-slack"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# Non-secret config. The Worker receives Slack slash commands for pluse-board.
+[vars]
+REPO = "marufeuille/pluse-board"
+
+# Secrets — set with `wrangler secret put <NAME>` (do NOT commit values):
+#   SLACK_SIGNING_SECRET  — Slack app signing secret (HMAC verification)
+#   OPENAI_API_KEY        — GPT structured-output call
+#   GH_TOKEN              — fine-grained PAT (or classic `repo` scope) to send repository_dispatch
+#
+# For local dev, mirror these in `.dev.vars` (gitignored).

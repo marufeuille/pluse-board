@@ -473,28 +473,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-      - name: Install dolt
-        run: curl -LsSf https://get.dolt.com | bash
-      - name: Install bd
-        run: npm install -g @beads/bd
-      - name: Configure DoltHub credentials
-        env:
-          DOLT_CREDS_KEY_ID: ${{ secrets.DOLT_CREDS_KEY_ID }}
-          DOLT_CREDS_JWK: ${{ secrets.DOLT_CREDS_JWK }}
-        run: |
-          mkdir -p "$HOME/.dolt/creds"
-          printf '%s' "$DOLT_CREDS_JWK" > "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
-          chmod 600 "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
-          dolt creds use "$DOLT_CREDS_KEY_ID"
-      - name: Restore beads from DoltHub
-        env:
-          CI: 'true'
-        run: bd bootstrap --yes
-      - name: Pull latest
-        run: bd dolt pull || true
+      - uses: ./.github/actions/setup-bd
       - name: Create beads issue
         env:
           CLASSIFICATION: ${{ needs.triage.outputs.classification }}

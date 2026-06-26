@@ -1,0 +1,44 @@
+name: Setup bd (beads)
+description: Install dolt + bd, configure DoltHub credentials, restore beads from the DoltHub remote, and pull latest. Call after actions/checkout.
+
+inputs:
+  node-version:
+    description: Node.js version used to install bd (npm global package).
+    required: false
+    default: "20"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install dolt
+      shell: bash
+      run: curl -LsSf https://get.dolt.com | bash
+
+    - name: Install bd
+      shell: bash
+      run: npm install -g @beads/bd
+
+    - name: Configure DoltHub credentials
+      shell: bash
+      env:
+        DOLT_CREDS_KEY_ID: ${{ secrets.DOLT_CREDS_KEY_ID }}
+        DOLT_CREDS_JWK: ${{ secrets.DOLT_CREDS_JWK }}
+      run: |
+        mkdir -p "$HOME/.dolt/creds"
+        printf '%s' "$DOLT_CREDS_JWK" > "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
+        chmod 600 "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
+        dolt creds use "$DOLT_CREDS_KEY_ID"
+
+    - name: Restore beads from DoltHub
+      shell: bash
+      env:
+        CI: 'true'
+      run: bd bootstrap --yes
+
+    - name: Pull latest
+      shell: bash
+      run: bd dolt pull || true
