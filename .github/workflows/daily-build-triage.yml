@@ -456,3 +456,65 @@ jobs:
                 body
               });
             }
+
+  create_beads_issue:
+    name: Create beads issue
+    needs: [triage, generate_patch]
+    if: >-
+      ${{
+        always() &&
+        needs.triage.result == 'success' &&
+        needs.triage.outputs.dry_run != 'true' &&
+        !(needs.triage.outputs.should_rerun == 'true' && needs.triage.outputs.run_attempt == '1') &&
+        needs.generate_patch.outputs.has_patch != 'true'
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - name: Install dolt
+        run: curl -LsSf https://get.dolt.com | bash
+      - name: Install bd
+        run: npm install -g @beads/bd
+      - name: Configure DoltHub credentials
+        env:
+          DOLT_CREDS_KEY_ID: ${{ secrets.DOLT_CREDS_KEY_ID }}
+          DOLT_CREDS_JWK: ${{ secrets.DOLT_CREDS_JWK }}
+        run: |
+          mkdir -p "$HOME/.dolt/creds"
+          printf '%s' "$DOLT_CREDS_JWK" > "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
+          chmod 600 "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
+          dolt creds use "$DOLT_CREDS_KEY_ID"
+      - name: Restore beads from DoltHub
+        env:
+          CI: 'true'
+        run: bd bootstrap --yes
+      - name: Pull latest
+        run: bd dolt pull || true
+      - name: Create beads issue
+        env:
+          CLASSIFICATION: ${{ needs.triage.outputs.classification }}
+          SUMMARY: ${{ needs.triage.outputs.summary }}
+          RUN_URL: ${{ needs.triage.outputs.run_url }}
+          HEAD_SHA: ${{ needs.triage.outputs.head_sha }}
+          RUN_ID: ${{ needs.triage.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          title="Daily Build failed: ${CLASSIFICATION}"
+          body="$(printf 'Daily Build failed and requires follow-up.\n\n- Classification: %s\n- Run: %s\n- Commit: %s\n\n%s' \
+                  "${CLASSIFICATION}" "${RUN_URL}" "${HEAD_SHA}" "${SUMMARY}")"
+          existing="$(bd search "${title}" --json 2>/dev/null | jq -r '.[0].id // empty' || true)"
+          if [ -n "$existing" ]; then
+            bd comment "$existing" --body "$body"
+          else
+            id="$(bd q "$title" -t bug -p 1 -l daily-build,triage)"
+            bd update "$id" --description "$body" --external-ref "gh-run-${RUN_ID}"
+          fi
+      - name: Sync to DoltHub
+        run: |
+          set -euo pipefail
+          bd dolt push || (bd dolt pull --force && bd dolt push)
