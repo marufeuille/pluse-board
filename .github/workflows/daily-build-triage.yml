@@ -486,7 +486,7 @@ jobs:
           title="Daily Build failed: ${CLASSIFICATION}"
           body="$(printf 'Daily Build failed and requires follow-up.\n\n- Classification: %s\n- Run: %s\n- Commit: %s\n\n%s' \
                   "${CLASSIFICATION}" "${RUN_URL}" "${HEAD_SHA}" "${SUMMARY}")"
-          existing="$(bd search "${title}" --json 2>/dev/null | jq -r '.[0].id // empty' || true)"
+          existing="$(bd search "${title}" --json 2>/dev/null | jq -r --arg title "${title}" '.[] | select(.title == $title) | .id' | head -1 || true)"
           if [ -n "$existing" ]; then
             bd comment "$existing" --body "$body"
           else
@@ -496,4 +496,6 @@ jobs:
       - name: Sync to DoltHub
         run: |
           set -euo pipefail
-          bd dolt push || (bd dolt pull --force && bd dolt push)
+          # dolt pull has no --force flag; default is fetch+merge which preserves the
+          # locally-created issue. Retry: pull remote changes, then push the merge.
+          bd dolt push || (bd dolt pull && bd dolt push)

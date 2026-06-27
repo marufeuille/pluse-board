@@ -106,8 +106,10 @@ jobs:
             create_args+=(--external-ref "slack-$correlation_id")
           fi
 
-          # De-duplicate by title (pattern reused from daily-build-triage create_beads_issue).
-          existing="$(bd search "$title" --json 2>/dev/null | jq -r '.[0].id // empty' || true)"
+          # De-duplicate by EXACT title match. bd search is keyword-based, so we filter
+          # with jq select(.title == $title) to avoid commenting on an unrelated issue
+          # whose title merely shares keywords.
+          existing="$(bd search "$title" --json 2>/dev/null | jq -r --arg title "$title" '.[] | select(.title == $title) | .id' | head -1 || true)"
 
           if [ -n "$existing" ]; then
             action="updated"
@@ -148,7 +150,9 @@ jobs:
         if: ${{ steps.beads.outputs.dry_run != 'true' }}
         run: |
           set -euo pipefail
-          bd dolt push || (bd dolt pull --force && bd dolt push)
+          # dolt pull has no --force flag; default is fetch+merge which preserves the
+          # locally-created issue. Retry: pull remote changes, then push the merge.
+          bd dolt push || (bd dolt pull && bd dolt push)
 
       - name: Notify Slack
         if: ${{ steps.beads.outputs.dry_run != 'true' && steps.beads.outputs.channel_id != '' }}
