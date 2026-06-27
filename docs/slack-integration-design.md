@@ -111,7 +111,7 @@ GitHub Actions（pluse-board: .github/workflows/slack-beads-create.yml）
 
 1. **Slack App**（api.slack.com/apps）: Slash Command `/task`（Request URL = `https://beads-slack.<account>.workers.dev/slack`）、Bot Token Scopes `commands` + `chat:write`。Signing Secret / Bot Token（`xoxb-...`）を取得。
 2. **Cloudflare**: `cd workers/beads-slack && npm install` → `npx wrangler secret put SLACK_SIGNING_SECRET` / `OPENAI_API_KEY` / `GH_TOKEN` → `npm run deploy`。
-3. **GitHub Secrets**: `marufeuille/pluse-board` に `SLACK_BOT_TOKEN` を追加。`GH_TOKEN` は fine-grained PAT（Contents: read で検証、403 なら write に拡張）または classic `repo` scope。
+3. **GitHub Secrets**: `marufeuille/pluse-board` に `SLACK_BOT_TOKEN` を追加。`GH_TOKEN` は fine-grained PAT（権限 `Actions: Read and write`、対象リポジトリは pluse-board のみ。**`Contents` 権限では repository_dispatch は 403 になる**）または classic `repo` scope（fine-grained 推奨）。
 4. **Slack App インストール**: ワークスペースにインストール。
 5. **動作確認**: Slack で `/task ログイン画面のバグを直して` → DoltHub に起票 → Slack に「起票しました <id>」通知。
 
