@@ -412,7 +412,7 @@ jobs:
       issues: write
     steps:
       - name: Create or update follow-up issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           CLASSIFICATION: ${{ needs.triage.outputs.classification }}
           SUMMARY: ${{ needs.triage.outputs.summary }}
