@@ -62,3 +62,22 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+
+  - package-ecosystem: "npm"
+    directory: "/workers/beads-slack"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:45"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+    groups:
+      workers-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

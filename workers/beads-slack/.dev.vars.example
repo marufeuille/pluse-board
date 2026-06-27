@@ -1,0 +1,4 @@
+# Copy to .dev.vars and fill in for local `wrangler dev`. NEVER commit .dev.vars.
+SLACK_SIGNING_SECRET=
+OPENAI_API_KEY=
+GH_TOKEN=

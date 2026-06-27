@@ -32,6 +32,10 @@ node_modules/
 npm-debug.log*
 .npm
 
+# Cloudflare Worker (beads-slack)
+workers/beads-slack/.dev.vars
+workers/beads-slack/.wrangler/
+
 # macOS
 .DS_Store
 
