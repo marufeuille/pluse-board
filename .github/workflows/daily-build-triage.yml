@@ -96,6 +96,7 @@ jobs:
             if [ -n "${DISPATCH_RUN_ID:-}" ]; then
               run_json="$(
                 gh run view "$DISPATCH_RUN_ID" \
+                  --repo "$GITHUB_REPOSITORY" \
                   --json attempt,conclusion,event,headBranch,headSha,url,workflowName
               )"
               run_id="$DISPATCH_RUN_ID"
@@ -172,8 +173,8 @@ jobs:
           if [ "$TEST_CASE" != "none" ]; then
             cp ".github/codex/testdata/daily-build/$TEST_CASE.log" failed-run.log
           elif [ -n "$RUN_ID" ]; then
-            gh run view "$RUN_ID" --log-failed > failed-run.log ||
-              gh run view "$RUN_ID" --log > failed-run.log ||
+            gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed > failed-run.log ||
+              gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log > failed-run.log ||
               true
           else
             echo "No run_id or test_case was provided." > failed-run.log
