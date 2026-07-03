@@ -22,11 +22,45 @@ runs:
 
     - name: Install dolt
       shell: bash
-      run: curl -LsSf https://get.dolt.com | bash
+      run: |
+        set -uo pipefail
+        # Try the official installer first; fall back to the GitHub release
+        # binary when get.dolt.com is unreachable (e.g. transient DNS outage).
+        arch="$(uname -m)"
+        case "$arch" in
+          x86_64) asset="dolt-linux-amd64.tar.gz" ;;
+          aarch64|arm64) asset="dolt-linux-arm64.tar.gz" ;;
+          *) echo "Unsupported arch: $arch" >&2; exit 1 ;;
+        esac
+        for i in 1 2 3 4 5; do
+          if curl -LsSf https://get.dolt.com | bash; then
+            dolt version
+            exit 0
+          fi
+          echo "Install dolt via get.dolt.com attempt $i failed; retrying in 15s..." >&2
+          sleep 15
+        done
+        echo "get.dolt.com unreachable after 5 attempts; falling back to GitHub release binary" >&2
+        tmp="$(mktemp -d)"
+        curl -LsSf -o "$tmp/$asset" \
+          "https://github.com/dolthub/dolt/releases/latest/download/$asset"
+        tar -xzf "$tmp/$asset" -C "$tmp"
+        sudo install -m 0755 "$tmp"/dolt-*/bin/dolt /usr/local/bin/dolt
+        rm -rf "$tmp"
+        dolt version
 
     - name: Install bd
       shell: bash
-      run: npm install -g @beads/bd
+      run: |
+        for i in 1 2 3 4 5; do
+          if npm install -g @beads/bd; then
+            exit 0
+          fi
+          echo "Install bd attempt $i failed; retrying in 15s..." >&2
+          sleep 15
+        done
+        echo "Install bd failed after 5 attempts" >&2
+        exit 1
 
     - name: Configure DoltHub credentials
       shell: bash
