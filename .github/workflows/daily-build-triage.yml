@@ -474,6 +474,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-bd
+        with:
+          dolt-creds-key-id: ${{ secrets.DOLT_CREDS_KEY_ID }}
+          dolt-creds-jwk: ${{ secrets.DOLT_CREDS_JWK }}
       - name: Create beads issue
         env:
           CLASSIFICATION: ${{ needs.triage.outputs.classification }}
