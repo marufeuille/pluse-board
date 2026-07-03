@@ -494,7 +494,7 @@ jobs:
                   "${CLASSIFICATION}" "${RUN_URL}" "${HEAD_SHA}" "${SUMMARY}")"
           existing="$(bd search "${title}" --json 2>/dev/null | jq -r --arg title "${title}" '.[] | select(.title == $title) | .id' | head -1 || true)"
           if [ -n "$existing" ]; then
-            bd comment "$existing" --body "$body"
+            bd comment "$existing" "$body"
           else
             id="$(bd q "$title" -t bug -p 1 -l daily-build,triage)"
             bd update "$id" --description "$body" --external-ref "gh-run-${RUN_ID}"
