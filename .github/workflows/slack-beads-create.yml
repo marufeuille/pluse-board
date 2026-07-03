@@ -118,7 +118,7 @@ jobs:
             action="updated"
             id="$existing"
             if [ "$dry_run" != "true" ]; then
-              bd comment "$existing" --body "$body"
+              bd comment "$existing" "$body"
             fi
           else
             action="created"
