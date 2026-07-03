@@ -68,9 +68,11 @@ runs:
         DOLT_CREDS_KEY_ID: ${{ inputs.dolt-creds-key-id }}
         DOLT_CREDS_JWK: ${{ inputs.dolt-creds-jwk }}
       run: |
-        mkdir -p "$HOME/.dolt/creds"
-        printf '%s' "$DOLT_CREDS_JWK" > "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
-        chmod 600 "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
+        # dolt derives the credential filename from the key material, so the
+        # JWK must be imported (not written to an arbitrary filename) for
+        # `dolt creds use` to find it. Importing via stdin avoids leaving the
+        # secret on disk outside dolt's own creds directory.
+        printf '%s' "$DOLT_CREDS_JWK" | dolt creds import
         dolt creds use "$DOLT_CREDS_KEY_ID"
 
     - name: Restore beads from DoltHub
