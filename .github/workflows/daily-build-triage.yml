@@ -248,8 +248,9 @@ jobs:
       - name: Rerun failed jobs once
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           RUN_ID: ${{ needs.triage.outputs.run_id }}
-        run: gh run rerun "$RUN_ID" --failed
+        run: gh run rerun "$RUN_ID" --failed --repo "$REPO"
 
   generate_patch:
     name: Generate patch
