@@ -6,6 +6,12 @@ inputs:
     description: Node.js version used to install bd (npm global package).
     required: false
     default: "20"
+  dolt-creds-key-id:
+    description: DoltHub credentials key ID. Pass from caller workflow secrets.
+    required: true
+  dolt-creds-jwk:
+    description: DoltHub credentials JWK. Pass from caller workflow secrets.
+    required: true
 
 runs:
   using: composite
@@ -25,8 +31,8 @@ runs:
     - name: Configure DoltHub credentials
       shell: bash
       env:
-        DOLT_CREDS_KEY_ID: ${{ secrets.DOLT_CREDS_KEY_ID }}
-        DOLT_CREDS_JWK: ${{ secrets.DOLT_CREDS_JWK }}
+        DOLT_CREDS_KEY_ID: ${{ inputs.dolt-creds-key-id }}
+        DOLT_CREDS_JWK: ${{ inputs.dolt-creds-jwk }}
       run: |
         mkdir -p "$HOME/.dolt/creds"
         printf '%s' "$DOLT_CREDS_JWK" > "$HOME/.dolt/creds/$DOLT_CREDS_KEY_ID.jwk"
