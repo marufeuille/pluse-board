@@ -62,6 +62,7 @@ jobs:
           DISPATCH_RUN_ID: ${{ inputs.run_id }}
           DISPATCH_TEST_CASE: ${{ inputs.test_case }}
           EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_SHA_VALUE: ${{ github.sha }}
           WORKFLOW_RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
