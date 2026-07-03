@@ -51,9 +51,18 @@ runs:
 
     - name: Install bd
       shell: bash
+      env:
+        # @beads/bd's postinstall skips the binary download when CI is set,
+        # but GitHub Actions always sets CI=true. Unset it for this step so
+        # the postinstall fetches the native binary.
+        CI: ''
       run: |
+        # Pin to 1.0.4: the 1.0.5 npm release has no matching GitHub release,
+        # so its postinstall 404s. Unpin once upstream republishes a release
+        # whose tag matches the npm version.
         for i in 1 2 3 4 5; do
-          if npm install -g @beads/bd; then
+          if npm install -g @beads/bd@1.0.4; then
+            bd version
             exit 0
           fi
           echo "Install bd attempt $i failed; retrying in 15s..." >&2
