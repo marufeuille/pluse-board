@@ -80,8 +80,10 @@ gcloud iam service-accounts create fitbit-dashboard \
   --display-name="pluse-board CI"
 
 # BigQuery 権限付与
+# dataOwner が必要: SQLMesh の janitor が期限切れ仮想環境の dataset を削除するため
+# (dataEditor には bigquery.datasets.delete が含まれない)
 gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${SA}" --role="roles/bigquery.dataEditor"
+  --member="serviceAccount:${SA}" --role="roles/bigquery.dataOwner"
 gcloud projects add-iam-policy-binding ${PROJECT_ID} \
   --member="serviceAccount:${SA}" --role="roles/bigquery.jobUser"
 
