@@ -266,3 +266,12 @@ npm run dev       # http://localhost:3000/pluse-board
 | `mart_steps_daily` | 日次歩数 |
 | `mart_load_daily` | 日次トレーニング負荷（AZM 合計） |
 | `mart_acwr` | ACWR（Acute:Chronic Workload Ratio） |
+
+---
+
+## データガバナンス（Dataplex / Knowledge Catalog）
+
+学習を兼ねて、パイプラインを GCP Dataplex 上でガバナンスする取り組み。
+
+- **リネージ（辺）**: OpenLineage で `Health API → raw → staging → mart` を可視化 → [`docs/openlineage-dataplex-design.md`](docs/openlineage-dataplex-design.md)
+- **品質 / プロファイル / カタログ / グロッサリ / プロダクト**: 検証ストーリー集 → [`docs/dataplex-governance-stories.md`](docs/dataplex-governance-stories.md)。データプロファイル/品質スキャンは初の IaC（[`terraform/`](terraform/)）で実装・検証済み。

@@ -49,3 +49,12 @@ workers/beads-slack/.wrangler/
 .dolt/
 *.db
 .beads-credential-key
+
+# Terraform
+# .terraform.lock.hcl は provider pin なのでコミットする（除外しない）
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+terraform/terraform.tfvars
+crash.log
+crash.*.log

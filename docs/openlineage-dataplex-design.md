@@ -210,3 +210,4 @@ Knowledge Catalog には 2 つのサブシステムがある:
 - **Phase 3（CI 組込み）**: `.github/workflows/daily.yml` の ingest ステップに lineage 用 env を注入し、WIF の ADC からトークンを取得して Dataplex へ投入。`uv sync` に `--group lineage` を追加。既定 no-op のため段階的に有効化できる。
 - **Phase 2（SQLMesh の lineage）**: `sqlmesh-openlineage` でカラム lineage + 実行統計。`config.yaml` を壊さない案（薄いランナー）を Marquez で先に spike してから採否を決める。
 - **台帳（カスタムエントリ登録）**: Health API 外部ソースを Knowledge Catalog の一級エントリにする（beads タスク管理）。
+- **Dataplex ガバナンス機能の学習**: lineage（辺）の先に、データ品質 / プロファイリング / カタログ / グロッサリ / データプロダクトを実データで触る検証ストーリー集 → [`dataplex-governance-stories.md`](dataplex-governance-stories.md)。S1/S2（プロファイル/品質スキャン）は初 IaC の [`../terraform/`](../terraform/) で実装・検証済み。
