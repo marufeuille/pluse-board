@@ -23,3 +23,6 @@ sqlmesh = [
     "sqlmesh[github]",
     "psycopg2-binary",
 ]
+lineage = [
+    "openlineage-python>=1.51.0",
+]

@@ -18,11 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: google-github-actions/auth@v3
+      - id: auth
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: >-
             projects/${{ vars.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github
           service_account: fitbit-dashboard@${{ vars.PROJECT_ID }}.iam.gserviceaccount.com
+          # OpenLineage → Dataplex 投入用に短命アクセストークンも発行する（ADC は従来どおり併存）
+          token_format: access_token
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -37,8 +40,13 @@ jobs:
           PROJECT_ID: ${{ vars.PROJECT_ID }}
           BQ_DATASET_RAW: ${{ vars.BQ_DATASET_RAW }}
           BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+          # OpenLineage → Dataplex（Knowledge Catalog）に Health API→raw の辺を投入。
+          # best-effort: 送信失敗しても ::warning:: のみで ingest は止めない（ingest/lineage.py）。
+          OPENLINEAGE_URL: https://datalineage.googleapis.com
+          OPENLINEAGE_ENDPOINT: v1/projects/${{ vars.PROJECT_ID }}/locations/${{ vars.BQ_LOCATION }}:processOpenLineageRunEvent
+          OPENLINEAGE_API_KEY: ${{ steps.auth.outputs.access_token }}
         run: |
-          uv sync --only-group ingest
+          uv sync --only-group ingest --only-group lineage
           uv run python ingest/pull_health_api.py
 
       - name: Check Health API freshness
