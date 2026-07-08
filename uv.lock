@@ -1119,6 +1119,7 @@ ingest = [
 ]
 lineage = [
     { name = "openlineage-python" },
+    { name = "sqlmesh-openlineage" },
 ]
 sqlmesh = [
     { name = "psycopg2-binary" },
@@ -1136,7 +1137,10 @@ ingest = [
     { name = "pydantic", specifier = ">=2" },
     { name = "requests", specifier = ">=2.34.2" },
 ]
-lineage = [{ name = "openlineage-python", specifier = ">=1.51.0" }]
+lineage = [
+    { name = "openlineage-python", specifier = ">=1.51.0" },
+    { name = "sqlmesh-openlineage", specifier = ">=0.1.0" },
+]
 sqlmesh = [
     { name = "psycopg2-binary" },
     { name = "sqlmesh", extras = ["bigquery"] },
@@ -1828,6 +1832,19 @@ web = [
     { name = "sse-starlette" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchfiles" },
+]
+
+[[package]]
+name = "sqlmesh-openlineage"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openlineage-python" },
+    { name = "sqlmesh" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6a/40/99aa687e7680c4b659b990c2eaba3d614d040c3afa3c6ee8d7f80bc914d4/sqlmesh_openlineage-0.1.0.tar.gz", hash = "sha256:5d5e54ace4678db33f742d80bdeefb66a285b71c44af88bc5af2771c5122247e", size = 156171 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/b2/c6658d101e92eeaf598bed6049ec375059be39bd3a5e8efebacaebf22295/sqlmesh_openlineage-0.1.0-py3-none-any.whl", hash = "sha256:e101ae6ecc1732def8ae7c65e973f28318ca642db76c2c3f80d0643e6277b4e1", size = 10649 },
 ]
 
 [[package]]
