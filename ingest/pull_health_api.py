@@ -15,6 +15,7 @@ from google.cloud import bigquery
 from requests import HTTPError
 
 from health_api_client import HealthApiClient
+from lineage import track_ingest
 
 # データ取得範囲のデフォルトは civil_start_time（= JST）基準で決める。
 # GitHub Actions ランナーの OS TZ は UTC なので、素の date.today() を使うと
@@ -234,21 +235,28 @@ def main() -> None:
     client = HealthApiClient()
     bq = _bq_client()
 
+    # OpenLineage 用: 出力先 BigQuery テーブルの座標（lineage 無効時は未使用でも害なし）
+    dataset, _ = _bq_settings()
+    project = os.environ["PROJECT_ID"]
+
     for dt in targets:
         flatten = _FLATTEN[dt]
-        for day_start, day_end in _day_ranges(start, end):
-            print(f"{dt} を取得中 ({day_start} – {day_end}) ...")
-            try:
-                rows = [
-                    flatten(p)
-                    for p in client.fetch_data_points(dt, day_start, day_end)
-                ]
-            except HTTPError as e:
-                if _can_skip_fetch_error(e, day_start, required_start, allow_stale_403):
-                    _print_fetch_error_warning(dt, day_start, day_end, e)
-                    continue
-                raise
-            _load_to_bq(bq, rows, dt, day_start, day_end)
+        # data_type ごとに 1 run（START→COMPLETE、例外時 FAIL）で lineage を出す。
+        # lineage 無効時は完全な no-op なので取り込みには一切影響しない。
+        with track_ingest(dt, project, dataset, _TABLE_NAME[dt]):
+            for day_start, day_end in _day_ranges(start, end):
+                print(f"{dt} を取得中 ({day_start} – {day_end}) ...")
+                try:
+                    rows = [
+                        flatten(p)
+                        for p in client.fetch_data_points(dt, day_start, day_end)
+                    ]
+                except HTTPError as e:
+                    if _can_skip_fetch_error(e, day_start, required_start, allow_stale_403):
+                        _print_fetch_error_warning(dt, day_start, day_end, e)
+                        continue
+                    raise
+                _load_to_bq(bq, rows, dt, day_start, day_end)
 
 
 if __name__ == "__main__":
