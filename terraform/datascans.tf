@@ -64,9 +64,12 @@ resource "google_dataplex_datascan" "mart_steps_quality" {
     resource = local.target_resource
   }
 
+  # デイリー監視（cron は UTC）。対象が極小テーブルのため課金は月数円〜数十円。
   execution_spec {
     trigger {
-      on_demand {}
+      schedule {
+        cron = var.quality_scan_cron
+      }
     }
   }
 
@@ -107,20 +110,6 @@ resource "google_dataplex_datascan" "mart_steps_quality" {
       description = "最新データが 2 日以内に存在する"
       table_condition_expectation {
         sql_expression = "MAX(activity_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)"
-      }
-    }
-
-    # 学習用の故意 FAIL ルール。実測 max=19253 に反する上限で意図的に落とし、
-    # FAIL の見え方・スコア・失敗行内訳を体感する。確認後 include_demo_failing_rule=false で外す。
-    dynamic "rules" {
-      for_each = var.include_demo_failing_rule ? [1] : []
-      content {
-        column      = "steps"
-        dimension   = "VALIDITY"
-        description = "【学習用・故意FAIL】実測 max(steps)=19253 に反する上限"
-        row_condition_expectation {
-          sql_expression = "steps <= ${var.demo_failing_steps_threshold}"
-        }
       }
     }
   }

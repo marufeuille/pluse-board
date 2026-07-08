@@ -22,19 +22,14 @@ variable "scan_target_table" {
   default     = "mart_steps_daily"
 }
 
-# --- 故意 FAIL ルール（学習用トグル） -------------------------------------
-# 初回 apply では true にして「FAIL の見え方」を体感し、確認後 false にすると
-# スキャンを削除せず正常系（全 PASS）に戻せる。
-variable "include_demo_failing_rule" {
-  description = "steps <= 10000 という現実に反する行条件ルールを含め、意図的に FAIL させる（学習用）"
-  type        = bool
-  default     = true
-}
-
-variable "demo_failing_steps_threshold" {
-  description = "故意 FAIL ルールの上限。実測 max(steps)=19253 より小さくすると FAIL する。"
-  type        = number
-  default     = 10000
+# --- スケジュール --------------------------------------------------------
+# 品質スキャンはデイリー監視。cron は UTC。既定 "0 1 * * *" = 01:00 UTC = 10:00 JST
+# （Daily Build は 00:00 UTC 開始なので、その後に走るよう 1 時間バッファ）。
+# 対象が極小テーブルのため課金は月数円〜数十円で数ドルに届かない（README のコスト節参照）。
+variable "quality_scan_cron" {
+  description = "品質スキャンの実行スケジュール（unix-cron, UTC）"
+  type        = string
+  default     = "0 1 * * *"
 }
 
 # --- 結果公開 --------------------------------------------------------------

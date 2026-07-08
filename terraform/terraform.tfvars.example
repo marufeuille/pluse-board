@@ -6,10 +6,9 @@
 # project_id  = "pluse-board"
 # region      = "asia-northeast1"
 
-# --- 学習用トグル ---
-# 故意 FAIL ルールの確認が済んだら false にして正常系（全 PASS）へ戻す。
-# include_demo_failing_rule    = true
-# demo_failing_steps_threshold = 10000
+# --- スケジュール ---
+# 品質スキャンのデイリー実行 cron（UTC）。既定 "0 1 * * *" = 10:00 JST。
+# quality_scan_cron = "0 1 * * *"
 
 # --- 結果公開 ---
 # enable_catalog_publishing = true

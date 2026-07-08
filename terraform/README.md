@@ -30,29 +30,29 @@ terraform plan
 # 3. 適用（API 有効化 + DataScan 2 本を作成）
 terraform apply
 
-# 4. スキャンを手動実行（on_demand トリガー）
-#    apply 後に出力される run_commands を使う
+# 4. スキャン実行
+#    - 品質スキャン: デイリースケジュール（既定 10:00 JST）で自動実行される
+#    - プロファイル: on_demand。ベースライン更新時に手動実行
 terraform output run_commands
 gcloud dataplex datascans run mart-steps-daily-profile --location=asia-northeast1 --project=pluse-board
+# 品質を即時に走らせたいとき（スケジュールを待たずに）
 gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast1 --project=pluse-board
 ```
 
-## 学習用トグル（`terraform.tfvars`）
+## トリガー
+
+| スキャン | トリガー | 備考 |
+|---|---|---|
+| プロファイル (S1) | `on_demand` | ベースライン用途。都度手動実行 |
+| 品質 (S2) | `schedule`（既定 `0 1 * * *` = 10:00 JST） | デイリー監視。Daily Build（00:00 UTC）の後に走るよう 1h バッファ |
+
+## 変数（`terraform.tfvars`）
 
 | 変数 | 既定 | 意味 |
 |---|---|---|
-| `include_demo_failing_rule` | `true` | `steps <= 10000`（実測 max=19253 に反する）で**故意に FAIL** させ、FAIL の見え方を体感 |
-| `demo_failing_steps_threshold` | `10000` | 故意 FAIL ルールの上限 |
+| `quality_scan_cron` | `"0 1 * * *"` | 品質スキャンのデイリー実行 cron（UTC。10:00 JST） |
 | `enable_catalog_publishing` | `true` | 品質結果を Catalog / BigQuery「データ品質」タブに公開 |
 | `grant_ci_datascan_role` | `false` | CI SA に `roles/dataplex.dataScanEditor` を**追記**付与（S3 用） |
-
-故意 FAIL を確認したら:
-
-```bash
-echo 'include_demo_failing_rule = false' >> terraform.tfvars
-terraform apply     # ルールを削除（スキャン自体は残る）
-gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast1 --project=pluse-board
-```
 
 ## IAM の方針（重要）
 
@@ -85,8 +85,15 @@ terraform init -migrate-state
 terraform destroy   # DataScan を削除（dataplex API は disable_on_destroy=false のため無効化しない）
 ```
 
-## コスト注意
+## コスト
 
-Dataplex DataScan は lineage 同様 **DCU 課金・無料枠なし**。対象 1 テーブル + on_demand なら実測は極小想定だが、
-既存の予算アラート（`1000JPY`）が効いていることを確認すること。課金 SKU は Cloud Billing で
+Dataplex DataScan は premium processing = **$0.089/DCU-hour・無料枠なし**、**秒課金・最低1分**。
+消費 DCU は行数×列数×スキャン量に比例する。対象 `mart_steps_daily` は 98 行×2 列と極小なので
+1 回のスキャンは実質「最低 1 分」に張り付く:
+
+- 1 スキャン ≈ 0.017 DCU-hour ≈ **$0.0015（≒0.2 円）/回**
+- 品質を毎日 1 回 × 30 日 ≈ **月 $0.05 未満（数円〜十数円）**。実消費が数倍でも月 $1 未満。
+
+→ 数ドルには全く届かないのでデイリー実行で問題ない。ただし premium は無料枠対象外なので厳密には $0 ではない。
+既存の予算アラート（`1000JPY`）が効いていることを確認し、課金 SKU は Cloud Billing で
 `goog-dataplex-workload-type` 系ラベルを数日観察する。

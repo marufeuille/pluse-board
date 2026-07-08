@@ -107,11 +107,13 @@ S2 のルールしきい値の「根拠＝現状把握」を得る。
 | `activity_date` UNIQUE | UNIQUENESS | `uniqueness_expectation` | SQLMesh unique_values audit と対比 |
 | `steps` ∈ [0, 100000] | VALIDITY | `range_expectation` | ドメイン上限（プロファイル実測 max=19253 → 安全側） |
 | `MAX(activity_date) >= today-2` | FRESHNESS | `table_condition_expectation` | 日次取り込みの鮮度を監視層でも |
-| **（故意 FAIL）** `steps <= 10000` | VALIDITY | `row_condition_expectation` | FAIL の見え方・行内訳を体感（`include_demo_failing_rule` で切替） |
+
+コミット構成に含まれるのはこの 4 ルール（全て正常系）。**トリガーは品質スキャンがデイリースケジュール
+（既定 `0 1 * * *` UTC = 10:00 JST。Daily Build の後に走るよう 1h バッファ）**、プロファイルは `on_demand`。
 
 ### 検証結果
 
-全体 **score: 80.0**（5 ルール中 4 PASS）。次元別: COMPLETENESS ✅ / UNIQUENESS ✅ / FRESHNESS ✅ / VALIDITY は混在。
+正常 4 ルールは全 PASS（**score 100.0**）。次元別も COMPLETENESS ✅ / UNIQUENESS ✅ / VALIDITY ✅ / FRESHNESS ✅。
 
 | 判定 | dimension | ルール | passRatio | 内訳 |
 |---|---|---|---|---|
@@ -119,22 +121,14 @@ S2 のルールしきい値の「根拠＝現状把握」を得る。
 | ✅ PASS | UNIQUENESS | `activity_date` unique | 1.0 | 98/98 |
 | ✅ PASS | VALIDITY | `steps` range 0–100000 | 1.0 | 98/98 |
 | ✅ PASS | FRESHNESS | 最新日 ≤ 2 日前 | — | table 条件成立 |
-| ❌ **FAIL** | VALIDITY | `steps <= 10000`（故意） | **0.857** | 84/98（14 日が 1 万歩超。max=19253 と整合） |
 
-→ **意図した通り**、正常な 4 ルールは全 PASS、現実に反する 1 ルールだけが FAIL し、
-`row_condition_expectation` は行単位の passRatio（0.857）で「どれだけ外れたか」を返す。
 `catalog_publishing_enabled=true` なので、このスコアは BigQuery コンソール `mart_steps_daily` の
 「データ品質」タブ / Dataplex Catalog にも公開される。
 
-### 故意 FAIL を外して正常系に戻す
-
-```bash
-cd terraform
-echo 'include_demo_failing_rule = false' >> terraform.tfvars
-terraform apply
-gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast1 --project=pluse-board
-# → score 100.0（全 PASS）になる
-```
+> **学び（検証時の観察）**: 開発中に一時的に「現実に反するルール」`steps <= 10000` を足して FAIL の見え方も確認した。
+> 結果は passRatio **0.857**（98 日中 84 日のみ成立。max=19253 と整合）で、`row_condition_expectation` は
+> 行単位で「どれだけ外れたか」を返すと分かった。この故意 FAIL ルールは**本番コードには残していない**
+> （検証専用。学習の記録としてここに残す）。
 
 ---
 
@@ -146,7 +140,8 @@ terraform init
 terraform plan          # 差分確認（DataScan 2 本 + API 有効化。IAM 変更なし）
 terraform apply
 
-# 手動実行（on_demand）
+# 品質スキャンはデイリースケジュールで自動実行される。
+# プロファイル（on_demand）と、品質を即時に走らせたいときは手動実行:
 gcloud dataplex datascans run mart-steps-daily-profile --location=asia-northeast1 --project=pluse-board
 gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast1 --project=pluse-board
 
@@ -227,7 +222,9 @@ lineage の**参照ノード**（`custom:googlehealth:activity/*`）と Catalog 
 
 ## コスト / 後片付け
 
-- DataScan は DCU 課金・**無料枠なし**。`on_demand` トリガー＋対象 1 テーブルなら実測は極小想定。
+- DataScan は premium processing = **$0.089/DCU-hour・無料枠なし**、秒課金・最低1分。消費 DCU は行数×列数に比例。
+- 対象 `mart_steps_daily` は 98 行×2 列と極小 → 1 回 ≈ 0.017 DCU-hour ≈ **$0.0015/回**。
+  品質を毎日 1 回 × 30 日 ≈ **月 $0.05 未満（数円〜十数円）**、実消費が数倍でも月 $1 未満。数ドルには届かない。
 - 課金 SKU は Cloud Billing で `goog-dataplex-workload-type` 系ラベルを数日観察（lineage の runbook と同じ手法）。
 - 学習が済んだら `cd terraform && terraform destroy` でスキャンを削除（`dataplex` API は
   `disable_on_destroy=false` のため無効化しない）。
