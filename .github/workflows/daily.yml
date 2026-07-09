@@ -211,8 +211,11 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # 失敗ルールの文字列は beads(GitHub Markdown)と Slack で使い回している。
+          # Slack の mrkdwn は太字が *bold* なので、**bold** はそのまま literal 表示になる。
+          rules="$(printf '%s' "${DQ_FAILED_RULES}" | sed 's/\*\*/*/g')"
           text="$(printf ':rotating_light: Dataplex DQ FAIL — mart_steps_daily (score %s)\n\n%s\n\nbeads: %s\nRun: %s' \
-                  "${DQ_SCORE}" "${DQ_FAILED_RULES}" "${BEADS_ID}" "${RUN_URL}")"
+                  "${DQ_SCORE}" "${rules}" "${BEADS_ID}" "${RUN_URL}")"
           jq -nc --arg channel "$SLACK_CHANNEL_ID" --arg text "$text" \
             '{channel: $channel, text: $text}' > slack-payload.json
 
