@@ -277,3 +277,4 @@ Knowledge Catalog には 2 つのサブシステムがある:
 - **CI 組込み（済）**: `daily.yml` の ingest（Phase 1）・SQLMesh（Phase 2）両ステップに lineage 用 env を注入し、WIF の access_token で Dataplex へ投入。`uv sync` に `--only-group lineage` を追加。既定 no-op のため段階的に有効化できる。
 - **台帳（カスタムエントリ登録）**: Health API 外部ソースを Knowledge Catalog の一級エントリにする（beads タスク管理）。
 - **`sqlmesh-openlineage` の親解決取り込み**: input dataset 名のクォート問題は上流 GitHub main で解決済み。次リリースが出たら `run_with_lineage.py` の `_patch_dataset_naming` を簡素化できるか再評価する。
+- **Dataplex ガバナンス機能の学習**: lineage（辺）の先に、データ品質 / プロファイリング / カタログ / グロッサリ / データプロダクトを実データで触る検証ストーリー集 → [`dataplex-governance-stories.md`](dataplex-governance-stories.md)。S1/S2（プロファイル/品質スキャン）は初 IaC の [`../terraform/`](../terraform/) で実装・検証済み。

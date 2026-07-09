@@ -1,0 +1,17 @@
+# このファイルをコピーして terraform.tfvars を作り、必要な値だけ上書きする。
+#   cp terraform.tfvars.example terraform.tfvars
+# 既定値（pluse-board / asia-northeast1 / fitbit_mart / mart_steps_daily）で動くので、
+# 通常は空の terraform.tfvars でもよい。
+
+# project_id  = "pluse-board"
+# region      = "asia-northeast1"
+
+# --- スケジュール ---
+# 品質スキャンのデイリー実行 cron（UTC）。既定 "0 1 * * *" = 10:00 JST。
+# quality_scan_cron = "0 1 * * *"
+
+# --- 結果公開 ---
+# enable_catalog_publishing = true
+
+# --- IAM（S3 着手時のみ true）---
+# grant_ci_datascan_role = false
