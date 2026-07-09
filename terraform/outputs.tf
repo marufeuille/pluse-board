@@ -36,3 +36,19 @@ output "catalog_search_commands" {
     by_keyword     = "gcloud dataplex entries search 'googlehealth' --project=${var.project_id}"
   }
 }
+
+output "glossary_id" {
+  description = "ヘルスメトリクス用語集の glossary_id (S5)"
+  value       = google_dataplex_glossary.health_metrics.glossary_id
+}
+
+# 用語↔カラムの紐付け（definition EntryLink）は TF にも gcloud にもリソースが無く、
+# 実体は TF 管理外の @bigquery エントリグループ配下に作られる。スクリプトで管理する。
+output "glossary_link_commands" {
+  description = "用語をカラムに紐付ける / 逆引きするコマンド (S5)"
+  value = {
+    create = "GLOSSARY_ID=${google_dataplex_glossary.health_metrics.glossary_id} ./scripts/dataplex_glossary_links.sh"
+    verify = "GLOSSARY_ID=${google_dataplex_glossary.health_metrics.glossary_id} ./scripts/dataplex_glossary_links.sh --verify"
+    delete = "GLOSSARY_ID=${google_dataplex_glossary.health_metrics.glossary_id} ./scripts/dataplex_glossary_links.sh --delete"
+  }
+}

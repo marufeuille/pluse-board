@@ -1,9 +1,10 @@
 # terraform/ — pluse-board 初の IaC（Dataplex ガバナンス）
 
 このリポジトリ初の Infrastructure-as-Code。Dataplex の
-**データプロファイルスキャン（S1）**・**データ品質スキャン（S2）**（`datascans.tf`）と、
-**カタログエントリ＋アスペクト（S4）**（`catalog.tf`）を管理する。
-以降のストーリー（S5–S6）で拡張していく。設計とストーリー全体は
+**データプロファイルスキャン（S1）**・**データ品質スキャン（S2）**（`datascans.tf`）、
+**カタログエントリ＋アスペクト（S4）**（`catalog.tf`）、
+**ビジネスグロッサリ（S5）**（`glossary.tf`）を管理する。
+以降のストーリー（S6）で拡張していく。設計とストーリー全体は
 [`../docs/dataplex-governance-stories.md`](../docs/dataplex-governance-stories.md) を参照。
 
 ## 前提
@@ -28,7 +29,8 @@ terraform init
 # 2. 差分確認（何が作られるか）
 terraform plan
 
-# 3. 適用（API 有効化 + DataScan 2 本 + Entry Group / Aspect Type / Entry 3 本）
+# 3. 適用（API 有効化 + DataScan 2 本 + Entry Group / Aspect Type / Entry 3 本
+#          + Glossary 1 / Category 2 / Term 4）
 terraform apply
 
 # 4. スキャン実行（どちらも on_demand）
@@ -41,6 +43,10 @@ gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast
 
 # 5. カタログの確認（S4）
 terraform output catalog_search_commands
+
+# 6. 用語をカラムに紐付ける（S5。terraform apply だけでは紐付かない）
+terraform output glossary_link_commands
+cd .. && ./scripts/dataplex_glossary_links.sh
 ```
 
 ## トリガー
@@ -60,6 +66,22 @@ terraform output catalog_search_commands
 | `enable_catalog_publishing` | `true` | 品質結果を Catalog / BigQuery「データ品質」タブに公開 |
 | `catalog_data_owner` | `marufeuille@gmail.com` | S4 の台帳アスペクト `data_owner` に入れる管理責任者 |
 | `grant_ci_datascan_role` | `true` | CI SA に `dataScanEditor` + `dataScanDataViewer` を**追記**付与（S3 の CI 連携に必須） |
+
+## S5: 用語をカラムに紐付ける（`scripts/dataplex_glossary_links.sh`）
+
+`glossary.tf` は Glossary / Category / Term までしか作れない。**用語↔カラムの紐付けは
+「definition タイプの EntryLink」**という別リソースで、Terraform provider にも gcloud にも存在せず
+REST API しか経路が無い。しかも実体は Dataplex が自動生成する `@bigquery` エントリグループ配下
+（= TF 管理外）に作られる。S4 のアスペクト付与と同じ理屈で、TF ではなくスクリプトで管理する。
+
+```bash
+./scripts/dataplex_glossary_links.sh           # 不足しているリンクを作る（冪等）
+./scripts/dataplex_glossary_links.sh --verify  # 用語側から逆引きして確認
+./scripts/dataplex_glossary_links.sh --delete  # 作ったリンクを削除
+```
+
+紐付け対象はスクリプト内の `LINKS` 配列に `<dataset>:<table>:<column>:<term_id>` で持つ。
+用語の定義そのものは `glossary.tf`、定義の原典は [`../reports/pages/about.md`](../reports/pages/about.md)。
 
 ## S4: `@bigquery` エントリへのアスペクト付与（手動 runbook）
 
@@ -120,7 +142,10 @@ terraform init -migrate-state
 `on_demand` トリガーなので放置課金は最小。学習が済んだらスキャンを削除:
 
 ```bash
-terraform destroy   # DataScan / Entry Group / Aspect Type / Entry を削除
+# 先に TF 管理外のものを消す（destroy では消えない）
+./scripts/dataplex_glossary_links.sh --delete
+
+terraform destroy   # DataScan / Entry Group / Aspect Type / Entry / Glossary 一式を削除
                     # （dataplex API は disable_on_destroy=false のため無効化しない）
 ```
 
@@ -144,5 +169,6 @@ Dataplex DataScan は premium processing = **$0.089/DCU-hour・無料枠なし**
 既存の予算アラート（`1000JPY`）が効いていることを確認し、課金 SKU は Cloud Billing で
 `goog-dataplex-workload-type` 系ラベルを数日観察する。
 
-一方 **S4 のカタログエントリ／アスペクトは DCU を消費しない**（DataScan と違い compute が走らない）。
-課金対象はメタデータストレージのみで、エントリ数本・数百バイトのアスペクトでは実質 **$0**。
+一方 **S4 のカタログエントリ／アスペクトと S5 のグロッサリは DCU を消費しない**（DataScan と違い
+compute が走らない）。課金対象はメタデータストレージのみで、エントリ数本・数百バイトのアスペクト・
+用語 4 本では実質 **$0**。
