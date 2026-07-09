@@ -25,4 +25,7 @@ sqlmesh = [
 ]
 lineage = [
     "openlineage-python>=1.51.0",
+    # SQLMesh のモデル評価を OpenLineage で計装（Phase 2）。set_console() で
+    # console を差し替え START/COMPLETE/FAIL + カラム lineage + 実行統計を emit。
+    "sqlmesh-openlineage>=0.1.0",
 ]

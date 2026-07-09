@@ -10,7 +10,7 @@ pluse-board のデータパイプライン
 1. **OpenLineage 仕様そのもの**（Run / Job / Dataset / Facet）を reference 実装 **Marquez** の UI で体感する。
 2. **GCP ガバナンス**として、OpenLineage イベントと BigQuery 自動リネージが Dataplex 上で 1 枚のグラフに統合される様子を見る。
 
-> **Status**: Phase 0（BQ 自動リネージ有効化）・Phase 1（Python 取り込みの OpenLineage 自作）は**実装済み・検証済み**。Phase 3（CI 組込み）着手中。Phase 2（SQLMesh の lineage）は未着手。台帳（カスタムエントリ登録）は別 beads タスク。
+> **Status**: Phase 0（BQ 自動リネージ有効化）・Phase 1（Python 取り込みの OpenLineage 自作）・Phase 2（SQLMesh モデル評価の OpenLineage 計装）は**実装済み・検証済み**（Marquez / Dataplex 両方で確認）。台帳（カスタムエントリ登録）は別 beads タスク。
 
 ## 全体像（3 層のリネージ）
 
@@ -20,7 +20,7 @@ pluse-board のデータパイプライン
 |---|---|---|---|
 | BigQuery の SQL 変換（staging→mart） | Data Lineage API 有効化で**テーブル/カラム自動取得** | コード不要 | ✅ Phase 0 |
 | Python 取り込み（Health API → `fitbit_raw`） | BQ が見られない API 起点の辺を **OpenLineage 自作**で埋める | `ingest/lineage.py` | ✅ Phase 1 |
-| SQLMesh の論理 DAG / 実行統計 | `sqlmesh-openlineage` で START/COMPLETE/FAIL + カラム lineage | 未 | ⬜ Phase 2 |
+| SQLMesh の論理 DAG / 実行統計 | `sqlmesh-openlineage` で START/COMPLETE/FAIL + カラム lineage + 実行統計 | `sqlmesh_project/run_with_lineage.py` | ✅ Phase 2 |
 
 ```mermaid
 flowchart LR
@@ -190,6 +190,73 @@ uv run --group ingest --group lineage python ingest/pull_health_api.py --lookbac
 
 ---
 
+## Phase 2: SQLMesh モデル評価の OpenLineage 計装
+
+BQ 自動リネージは `raw→staging→mart` のテーブル/カラム lineage を自動取得するが、**SQLMesh の実行そのものの provenance**（モデル評価ごとの START/COMPLETE/FAIL・実行統計・`transformations` 付きカラム lineage）は取れない。ここを [`sidequery/sqlmesh-openlineage`](https://github.com/sidequery/sqlmesh-openlineage)（PyPI v0.1.0）で埋める。
+
+### 仕組み
+
+パッケージは SQLMesh の `set_console()` で**グローバル console を差し替える**（`OpenLineageConsole` が全メソッドを委譲しつつ snapshot 評価イベントだけ横取り）。emit 内容:
+
+- **START / COMPLETE / FAIL**（monitor 対象。audit 失敗も FAIL）
+- **カラム lineage**（`ColumnLineageDatasetFacet`。`transformations`: DIRECT + IDENTITY|TRANSFORMATION。Dataplex のカラム lineage 要件を満たす）
+- **実行統計**（run facet `sqlmesh_execution`: `durationMs`/`rowsProcessed`/`bytesProcessed` ＋ 出力 dataset の `outputStatistics`）
+- schema・SQL・ソースコードパス facet
+
+全 emit はパッケージ側で `try/except + warning` の **best-effort**。SQLMesh 0.235.4 の Console API（`update_snapshot_evaluation_progress(execution_stats=...)` 等）と v0.1.0 は互換。
+
+### 採用アプローチ: 案B（config.yaml 温存 + 薄いランナー）
+
+パッケージ README は config.py 必須と書くが、`set_console()` は **`Context.__init__` が `get_console()` で拾う**グローバル状態なので、`Context()` 生成の前に console を差し替える薄いランナーで足りる → **config.yaml を一切変更せず**に計装できる。SQLMesh Bot（`sqlmesh_cicd github run-all`）・ローカル CLI は無影響、lineage は daily の run/plan だけにスコープされる。
+
+実装: **`sqlmesh_project/run_with_lineage.py`**。CLI `sqlmesh --gateway <gw> run|plan` の代替。transport は Phase 1 と同じく**環境変数だけ**で決まり（Marquez / Dataplex を env で切替）、`OPENLINEAGE_URL` 未設定なら素の `Context` 実行に完全フォールバック（no-op 安全）。
+
+### パッケージ標準の install() を使わなかった理由（要対処ギャップ 2 点）
+
+1. **dataset namespace**: `install()` は job と dataset に**同一 namespace**を使う。BQ 自動リネージ / Phase 1 のノード（`namespace="bigquery"`）と地続きにするため、ランナーでは `namespace="bigquery"` で `OpenLineageConsole` を構築する。
+2. **Dataplex transport**: パッケージ内の `OpenLineageClient(url=...)` は endpoint が `api/v1/lineage` **固定**で `OPENLINEAGE_ENDPOINT` を**無視**する（Marquez 用。Dataplex の `:processOpenLineageRunEvent` に届かない）。→ ランナーで emitter の client を **env ベースの `OpenLineageClient()`（Phase 1 と同一・`OPENLINEAGE_ENDPOINT` を尊重）に差し替える**。
+
+加えて、**インストール済み v0.1.0 は親スナップショットを解決せず** input dataset 名を `"proj"."ds"."tbl"`（クォート付き）で出す（GitHub main の解決ロジックは未リリース）。そのままだと出力ノード `proj.ds.tbl` や BQ 自動リネージと**別ノードに分裂**するため、ランナーで `snapshot_to_input_datasets` / `snapshot_to_output_dataset` を薄くラップして**クォートを剥いだクリーン名 `proj.ds.tbl` に正規化**する（`_patch_dataset_naming`）。
+
+### CI 組込み（`daily.yml`）
+
+SQLMesh の 2 ステップ（deploy=push / run=schedule）で:
+
+- `uv sync --only-group sqlmesh` → `--only-group sqlmesh --only-group lineage`
+- `sqlmesh --gateway ci plan|run` → `python run_with_lineage.py plan|run --gateway ci`
+- Phase 1 の ingest ステップと同じ `OPENLINEAGE_URL`/`ENDPOINT`/`API_KEY`（`steps.auth.outputs.access_token`）を注入
+
+best-effort なので送信失敗しても deploy は継続する。
+
+### 検証（Marquez → Dataplex）
+
+```bash
+# Marquez。dev 環境 ol_spike を bigquery gateway(DuckDB state・実 BigQuery data)で backfill
+OPENLINEAGE_URL=http://localhost:9000 \
+  uv run --group sqlmesh --group lineage \
+  python sqlmesh_project/run_with_lineage.py plan --gateway bigquery --environment ol_spike
+#   → http://localhost:3000 の bigquery namespace に 13 モデルの job・DAG・カラム lineage・実行統計
+#   → 既評価分を再検証するには restate（ctx.plan("ol_spike", restate_models=[...])）で強制再評価
+
+# Dataplex（env 差し替えのみ）
+OPENLINEAGE_URL=https://datalineage.googleapis.com \
+OPENLINEAGE_ENDPOINT=v1/projects/pluse-board/locations/asia-northeast1:processOpenLineageRunEvent \
+OPENLINEAGE_API_KEY=$(gcloud auth print-access-token) \
+  uv run --group sqlmesh --group lineage \
+  python sqlmesh_project/run_with_lineage.py plan --gateway bigquery --environment ol_spike
+```
+
+確認できたこと:
+
+- **Marquez**: `googlehealth:activity/exercise`(Phase 1) → `pluse-board.fitbit_raw.*` → `stg_*` → `mart_*` が**全ノードクリーンで地続き**。カラム lineage 例: `mart_exercise_daily.activity_date ← stg_exercise.start_time`。実行統計 `durationMs/rowsProcessed/bytesProcessed` を run facet で取得。
+- **Dataplex**（`searchLinks`）: 我々の OpenLineage エッジ `bigquery:...stg_exercise → ...mart_exercise_daily` が、BQ 自動リネージのエッジと**同一のクリーンノード上で共存**（= 1 枚のグラフに統合）。カラム lineage は BQ コンソールのリネージタブで列単位表示。
+- **best-effort / no-op**: `OPENLINEAGE_URL` 未設定なら素の SQLMesh と同一挙動。計装セットアップ・emit 失敗は `::warning::` のみで SQLMesh を止めない。
+- `snapshot_to_table_name` は**論理ビュー名**（`pluse-board.fitbit_staging.stg_exercise` = 実 prod テーブル名）を使うため、dev 環境の spike でも edges は正しい prod ノードに付く。
+
+> **メモ**: spike で作った dev 環境は `ctx.invalidate_environment(...)` + janitor で掃除する。
+
+---
+
 ## 学びメモ: 「リネージ」と「カタログ」は別物
 
 Knowledge Catalog には 2 つのサブシステムがある:
@@ -207,7 +274,7 @@ Knowledge Catalog には 2 つのサブシステムがある:
 
 ## 次のステップ
 
-- **Phase 3（CI 組込み）**: `.github/workflows/daily.yml` の ingest ステップに lineage 用 env を注入し、WIF の ADC からトークンを取得して Dataplex へ投入。`uv sync` に `--group lineage` を追加。既定 no-op のため段階的に有効化できる。
-- **Phase 2（SQLMesh の lineage）**: `sqlmesh-openlineage` でカラム lineage + 実行統計。`config.yaml` を壊さない案（薄いランナー）を Marquez で先に spike してから採否を決める。
+- **CI 組込み（済）**: `daily.yml` の ingest（Phase 1）・SQLMesh（Phase 2）両ステップに lineage 用 env を注入し、WIF の access_token で Dataplex へ投入。`uv sync` に `--only-group lineage` を追加。既定 no-op のため段階的に有効化できる。
 - **台帳（カスタムエントリ登録）**: Health API 外部ソースを Knowledge Catalog の一級エントリにする（beads タスク管理）。
+- **`sqlmesh-openlineage` の親解決取り込み**: input dataset 名のクォート問題は上流 GitHub main で解決済み。次リリースが出たら `run_with_lineage.py` の `_patch_dataset_naming` を簡素化できるか再評価する。
 - **Dataplex ガバナンス機能の学習**: lineage（辺）の先に、データ品質 / プロファイリング / カタログ / グロッサリ / データプロダクトを実データで触る検証ストーリー集 → [`dataplex-governance-stories.md`](dataplex-governance-stories.md)。S1/S2（プロファイル/品質スキャン）は初 IaC の [`../terraform/`](../terraform/) で実装・検証済み。

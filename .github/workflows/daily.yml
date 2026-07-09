@@ -69,9 +69,14 @@ jobs:
           SQLMESH_STATE_HOST: ${{ secrets.SQLMESH_STATE_HOST }}
           SQLMESH_STATE_USER: ${{ secrets.SQLMESH_STATE_USER }}
           SQLMESH_STATE_PASSWORD: ${{ secrets.SQLMESH_STATE_PASSWORD }}
+          # OpenLineage → Dataplex に SQLMesh モデル評価の辺(カラム lineage + 実行統計)を投入。
+          # best-effort: 送信失敗しても ::warning:: のみで SQLMesh 実行は止めない（run_with_lineage.py）。
+          OPENLINEAGE_URL: https://datalineage.googleapis.com
+          OPENLINEAGE_ENDPOINT: v1/projects/${{ vars.PROJECT_ID }}/locations/${{ vars.BQ_LOCATION }}:processOpenLineageRunEvent
+          OPENLINEAGE_API_KEY: ${{ steps.auth.outputs.access_token }}
         run: |
-          uv sync --only-group sqlmesh
-          cd sqlmesh_project && uv run sqlmesh --gateway ci plan --auto-apply --no-prompts
+          uv sync --only-group sqlmesh --only-group lineage
+          cd sqlmesh_project && uv run python run_with_lineage.py plan --gateway ci
 
       - name: Run SQLMesh (advance intervals)
         if: github.event_name != 'push'
@@ -81,9 +86,14 @@ jobs:
           SQLMESH_STATE_HOST: ${{ secrets.SQLMESH_STATE_HOST }}
           SQLMESH_STATE_USER: ${{ secrets.SQLMESH_STATE_USER }}
           SQLMESH_STATE_PASSWORD: ${{ secrets.SQLMESH_STATE_PASSWORD }}
+          # OpenLineage → Dataplex に SQLMesh モデル評価の辺(カラム lineage + 実行統計)を投入。
+          # best-effort: 送信失敗しても ::warning:: のみで SQLMesh 実行は止めない（run_with_lineage.py）。
+          OPENLINEAGE_URL: https://datalineage.googleapis.com
+          OPENLINEAGE_ENDPOINT: v1/projects/${{ vars.PROJECT_ID }}/locations/${{ vars.BQ_LOCATION }}:processOpenLineageRunEvent
+          OPENLINEAGE_API_KEY: ${{ steps.auth.outputs.access_token }}
         run: |
-          uv sync --only-group sqlmesh
-          cd sqlmesh_project && uv run sqlmesh --gateway ci run
+          uv sync --only-group sqlmesh --only-group lineage
+          cd sqlmesh_project && uv run python run_with_lineage.py run --gateway ci
 
       - uses: actions/setup-node@v6
         with:
