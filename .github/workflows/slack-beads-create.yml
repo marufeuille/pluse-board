@@ -162,7 +162,7 @@ jobs:
         if: ${{ steps.beads.outputs.dry_run != 'true' && steps.beads.outputs.channel_id != '' }}
         # 通知が届かなくても起票自体は済んでいるので、ジョブは落とさず可視化に留める。
         continue-on-error: true
-        uses: slackapi/slack-github-action@v2
+        uses: slackapi/slack-github-action@v3
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
