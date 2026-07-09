@@ -30,12 +30,12 @@ terraform plan
 # 3. 適用（API 有効化 + DataScan 2 本を作成）
 terraform apply
 
-# 4. スキャン実行
-#    - 品質スキャン: デイリースケジュール（既定 10:00 JST）で自動実行される
-#    - プロファイル: on_demand。ベースライン更新時に手動実行
+# 4. スキャン実行（どちらも on_demand）
+#    - 品質スキャン: 通常は Daily Build（daily.yml）が SQLMesh run 直後に起動する
+#    - プロファイル: ベースライン更新時に手動実行
 terraform output run_commands
 gcloud dataplex datascans run mart-steps-daily-profile --location=asia-northeast1 --project=pluse-board
-# 品質を即時に走らせたいとき（スケジュールを待たずに）
+# 品質を手元から即時に走らせたいとき（CI を待たずに）
 gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast1 --project=pluse-board
 ```
 
@@ -44,21 +44,26 @@ gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast
 | スキャン | トリガー | 備考 |
 |---|---|---|
 | プロファイル (S1) | `on_demand` | ベースライン用途。都度手動実行 |
-| 品質 (S2) | `schedule`（既定 `0 1 * * *` = 10:00 JST） | デイリー監視。Daily Build（00:00 UTC）の後に走るよう 1h バッファ |
+| 品質 (S2) | `on_demand` | Daily Build が SQLMesh run 直後に起動（S3）。新鮮なデータの直後に同期判定し FAIL を beads/Slack へ |
+
+> Dataplex 側のデイリースケジュールは S3 で撤去した。CI から起動すれば「取り込み → 変換 → 品質判定」が
+> 1 本のパイプラインに収まり、結果を既存の通知基盤に流せる。両方あると二重実行になる。
 
 ## 変数（`terraform.tfvars`）
 
 | 変数 | 既定 | 意味 |
 |---|---|---|
-| `quality_scan_cron` | `"0 1 * * *"` | 品質スキャンのデイリー実行 cron（UTC。10:00 JST） |
 | `enable_catalog_publishing` | `true` | 品質結果を Catalog / BigQuery「データ品質」タブに公開 |
-| `grant_ci_datascan_role` | `false` | CI SA に `roles/dataplex.dataScanEditor` を**追記**付与（S3 用） |
+| `grant_ci_datascan_role` | `true` | CI SA に `dataScanEditor` + `dataScanDataViewer` を**追記**付与（S3 の CI 連携に必須） |
 
 ## IAM の方針（重要）
 
 - **追記型 `google_project_iam_member` のみ**。権威型（`google_project_iam_policy` /
   `google_project_iam_binding`）は既存の WIF/BigQuery バインディングを破壊するため**使わない**。
-- ローカル実行者は Owner 相当のため DataScan ロールは付与不要（既定で IAM は変更しない）。
+- ローカル実行者は Owner 相当のため付与不要。CI SA には 2 ロールが要る:
+  - `roles/dataplex.dataScanEditor` — スキャンの起動
+  - `roles/dataplex.dataScanDataViewer` — ジョブ結果（`dataQualityResult`）の閲覧。**Editor だけでは
+    合否・スコアが読めない**（job は GET できるが結果本体が返らない）
 
 ## backend（state）
 

@@ -15,6 +15,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      dq_status: ${{ steps.dq.outputs.status }}
+      dq_score: ${{ steps.dq.outputs.score }}
+      dq_job: ${{ steps.dq.outputs.job_name }}
+      dq_failed_rules: ${{ steps.dq.outputs.failed_rules }}
     steps:
       - uses: actions/checkout@v6
 
@@ -95,6 +100,21 @@ jobs:
           uv sync --only-group sqlmesh --only-group lineage
           cd sqlmesh_project && uv run python run_with_lineage.py run --gateway ci
 
+      # マートが更新された直後に Dataplex 品質スキャンを起動し、合否を同期的に判定する。
+      # best-effort: スキャン失敗・タイムアウトでも status=error で exit 0（daily.yml は止めない）。
+      # FAIL(status=fail) のときだけ後続の notify_dq が beads 起票 + Slack 通知する。
+      - name: Run Dataplex data quality scan
+        id: dq
+        # スクリプトは全経路で exit 0 する。continue-on-error は env 未設定など
+        # スクリプトに入る前の設定ミス用の最後の安全網（その場合 status は空になり notify_dq は走らない）。
+        continue-on-error: true
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+          DATASCAN_ID: mart-steps-daily-quality
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: ./scripts/dataplex_dq_scan.sh
+
       - uses: actions/setup-node@v6
         with:
           node-version: "20"
@@ -123,3 +143,83 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  # 品質スキャンが FAIL したときだけ走る。ガバナンス層の通知であって
+  # パイプラインのゲートではないので、deploy は止めない（deploy は needs: build のまま）。
+  notify_dq:
+    name: Notify data quality failure
+    needs: build
+    if: ${{ always() && needs.build.outputs.dq_status == 'fail' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # slack-beads-create.yml と同じグループ。bd の書き込みを直列化して DoltHub push レースを防ぐ。
+    concurrency:
+      group: beads-slack
+      cancel-in-progress: false
+    env:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ vars.SLACK_ALERT_CHANNEL_ID }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-bd
+        with:
+          dolt-creds-key-id: ${{ secrets.DOLT_CREDS_KEY_ID }}
+          dolt-creds-jwk: ${{ secrets.DOLT_CREDS_JWK }}
+
+      - name: Create beads issue
+        id: beads
+        env:
+          DQ_SCORE: ${{ needs.build.outputs.dq_score }}
+          DQ_JOB: ${{ needs.build.outputs.dq_job }}
+          DQ_FAILED_RULES: ${{ needs.build.outputs.dq_failed_rules }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Dataplex DQ FAIL: mart_steps_daily"
+          body="$(printf 'Dataplex のデータ品質スキャンが FAIL した（パイプラインは継続している）。\n\n- スコア: %s\n- ジョブ: %s\n- Run: %s\n\n## 失敗ルール\n\n%s' \
+                  "${DQ_SCORE}" "${DQ_JOB}" "${RUN_URL}" "${DQ_FAILED_RULES}")"
+
+          # タイトル完全一致で dedupe（bd search はキーワード検索なので jq で絞る）。
+          # 同じルールが翌日も落ちたら新規起票せず既存 issue にコメントを積む。
+          existing="$(bd search "${title}" --json 2>/dev/null | jq -r --arg title "${title}" '.[] | select(.title == $title) | .id' | head -1 || true)"
+          if [ -n "$existing" ]; then
+            id="$existing"
+            bd comment "$id" "$body"
+          else
+            id="$(bd q "$title" -t bug -p 2 -l dataplex,data-quality)"
+            bd update "$id" --description "$body" --external-ref "gh-run-${RUN_ID}"
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Sync to DoltHub
+        run: |
+          set -euo pipefail
+          # dolt pull has no --force flag; default is fetch+merge which preserves the
+          # locally-created issue. Retry: pull remote changes, then push the merge.
+          bd dolt push || (bd dolt pull && bd dolt push)
+
+      # SLACK_BOT_TOKEN(secret) と SLACK_ALERT_CHANNEL_ID(variable) が揃うまでは no-op。
+      # beads 起票だけで通知は成立するので、未設定でもジョブは success で終わる。
+      - name: Build Slack payload
+        if: ${{ env.SLACK_BOT_TOKEN != '' && env.SLACK_CHANNEL_ID != '' }}
+        env:
+          BEADS_ID: ${{ steps.beads.outputs.id }}
+          DQ_SCORE: ${{ needs.build.outputs.dq_score }}
+          DQ_FAILED_RULES: ${{ needs.build.outputs.dq_failed_rules }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          text="$(printf ':rotating_light: Dataplex DQ FAIL — mart_steps_daily (score %s)\n\n%s\n\nbeads: %s\nRun: %s' \
+                  "${DQ_SCORE}" "${DQ_FAILED_RULES}" "${BEADS_ID}" "${RUN_URL}")"
+          jq -nc --arg channel "$SLACK_CHANNEL_ID" --arg text "$text" \
+            '{channel: $channel, text: $text}' > slack-payload.json
+
+      - name: Notify Slack
+        if: ${{ env.SLACK_BOT_TOKEN != '' && env.SLACK_CHANNEL_ID != '' }}
+        uses: slackapi/slack-github-action@v2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload-file-path: ./slack-payload.json

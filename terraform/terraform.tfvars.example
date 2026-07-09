@@ -6,12 +6,10 @@
 # project_id  = "pluse-board"
 # region      = "asia-northeast1"
 
-# --- スケジュール ---
-# 品質スキャンのデイリー実行 cron（UTC）。既定 "0 1 * * *" = 10:00 JST。
-# quality_scan_cron = "0 1 * * *"
-
 # --- 結果公開 ---
 # enable_catalog_publishing = true
 
-# --- IAM（S3 着手時のみ true）---
-# grant_ci_datascan_role = false
+# --- IAM ---
+# CI（daily.yml）から品質スキャンを起動し結果を読むため既定 true。
+# CI 連携を切りたいときだけ false にする。
+# grant_ci_datascan_role = true

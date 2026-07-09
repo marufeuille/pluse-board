@@ -22,16 +22,6 @@ variable "scan_target_table" {
   default     = "mart_steps_daily"
 }
 
-# --- スケジュール --------------------------------------------------------
-# 品質スキャンはデイリー監視。cron は UTC。既定 "0 1 * * *" = 01:00 UTC = 10:00 JST
-# （Daily Build は 00:00 UTC 開始なので、その後に走るよう 1 時間バッファ）。
-# 対象が極小テーブルのため課金は月数円〜数十円で数ドルに届かない（README のコスト節参照）。
-variable "quality_scan_cron" {
-  description = "品質スキャンの実行スケジュール（unix-cron, UTC）"
-  type        = string
-  default     = "0 1 * * *"
-}
-
 # --- 結果公開 --------------------------------------------------------------
 variable "enable_catalog_publishing" {
   description = "スキャン結果を Dataplex Catalog / BigQuery の品質・プロファイルタブに公開する"
@@ -39,13 +29,13 @@ variable "enable_catalog_publishing" {
   default     = true
 }
 
-# --- IAM（追記型のみ・既定は付与しない） ----------------------------------
-# AGENTS.md により IAM 変更は要承認。ローカル実行者は既に Owner 相当のため
-# 既定では付与不要。CI SA へのロールは S3（CI 組込み）着手時に true にする。
+# --- IAM（追記型のみ） -----------------------------------------------------
+# AGENTS.md により IAM 変更は要承認。ローカル実行者は既に Owner 相当のため付与不要だが、
+# S3 で CI SA が DataScan を起動し結果を読むため、ユーザー承認のうえ既定 true にした。
 variable "grant_ci_datascan_role" {
-  description = "CI SA に roles/dataplex.dataScanEditor を追記付与する（S3 用。既定 false）"
+  description = "CI SA に DataScan の起動/結果閲覧ロールを追記付与する（S3 の daily.yml 連携に必須）"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "ci_service_account" {
