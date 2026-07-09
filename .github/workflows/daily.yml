@@ -217,9 +217,23 @@ jobs:
             '{channel: $channel, text: $text}' > slack-payload.json
 
       - name: Notify Slack
+        id: slack
         if: ${{ env.SLACK_BOT_TOKEN != '' && env.SLACK_CHANNEL_ID != '' }}
+        # 通知が届かなくても beads 起票は済んでいるので、ジョブ全体は落とさない。
+        # ただし Daily Build の conclusion を failure にすると daily-build-triage が
+        # 誤発火するので、job ではなく step で握る（下の Report Slack failure で可視化）。
+        continue-on-error: true
         uses: slackapi/slack-github-action@v2
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload-file-path: ./slack-payload.json
+          # 既定の errors:false は Slack が ok:false（not_in_channel 等）を返しても
+          # ステップを success にする＝「緑なのに通知が届かない」サイレント失敗になる。
+          errors: true
+
+      - name: Report Slack failure
+        if: ${{ steps.slack.outcome == 'failure' }}
+        run: |
+          echo "::error::Slack 通知に失敗した（beads 起票は成功している）。Slack App が通知先チャンネルに追加されているか、token に chat:write スコープがあるかを確認する。"
+          echo "> :warning: **Slack 通知に失敗**（beads 起票は成功）。上のステップのログに Slack API のエラーが出ている。" >> "$GITHUB_STEP_SUMMARY"
