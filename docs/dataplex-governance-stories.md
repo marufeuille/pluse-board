@@ -20,10 +20,10 @@ OpenLineage の Phase 0–2（[`openlineage-dataplex-design.md`](openlineage-dat
 | **S2** | データ品質スキャン（AutoDQ） | ドメインルールで継続監視。**SQLMesh audit との役割分担** | ✅ 実装・検証済み |
 | **S3** | DQ の CI/Slack 連携 | 実行後ガバナンススキャン。best-effort no-op で `daily.yml` へ | ✅ 実装・検証済み |
 | **S4** | カタログエントリ＋アスペクト | 外部ソース一級化＋メタデータ台帳。既存 deferred『台帳』回収 | ✅ 実装・検証済み |
-| **S5** | ビジネスグロッサリ | 技術メタデータ↔ビジネス定義の橋渡し | 📄 設計のみ |
+| **S5** | ビジネスグロッサリ | 技術メタデータ↔ビジネス定義の橋渡し | ✅ 実装・検証済み |
 | **S6** | データプロダクト | 消費者に見せる単位。lineage/DQ/用語を 1 プロダクトに集約 | 📄 設計のみ |
 
-インフラは初の IaC として [`../terraform/`](../terraform/) に集約（S1／S2／S4 を管理。S5 以降で拡張）。
+インフラは初の IaC として [`../terraform/`](../terraform/) に集約（S1／S2／S4／S5 を管理。S6 で拡張）。
 
 ---
 
@@ -397,19 +397,144 @@ Catalog の Entry / Aspect は **DCU を消費しない**（DataScan と違い c
 
 ---
 
-## S5: ビジネスグロッサリ 📄（設計のみ）
+## S5: ビジネスグロッサリ ✅
 
 **狙い**: 技術メタデータ（スキーマ）とビジネス定義の橋渡し。個人プロジェクトでもドメイン用語は多い。
 
-- Business Glossary に用語を定義しカラムに紐付け:
-  - **ACWR**（Acute:Chronic Workload Ratio、健全域 0.8–1.3）→ `mart_acwr.acwr`
-  - **トレーニング負荷**（AZM 日次合計）→ `mart_load_daily.load`
-  - **アクティブゾーン分**（AZM）→ `stg_active_zone_minutes.value`
-  - **筋トレ達成**（週 3 回以上で `meets_target=true`）→ `mart_strength_weekly.meets_target`
-- カラムのエントリから用語定義に辿れることを確認。
-- Terraform 対応: provider v6.50 には `google_dataplex_glossary` / `_category` / `_term` が**ある**
-  （S4 で Catalog 系リソースの実在を確認した際に併せて判明）。カラムへの紐付けは
-  カラム単位アスペクトキー（`...@Schema.<column>`）を使うことになりそうで、そこは要検証。
+S4 までで作ったのは「誰が持ち、どれだけ新鮮で、どれだけ正しいか」という**管理**のメタデータだった。
+S5 が足すのは「**その数字は何を意味するのか**」——`mart_acwr.acwr` という列名からは
+「0.8–1.3 が適切ゾーン、1.5 超は怪我リスク」は読み取れない。
+
+### 実装
+
+| 何を | どこで |
+|---|---|
+| Glossary `health-metrics` / Category × 2 / Term × 4 | `terraform/glossary.tf` |
+| 用語 → カラムの紐付け（definition EntryLink × 4） | `scripts/dataplex_glossary_links.sh`（新規） |
+
+| 用語 | カテゴリ | 紐付け先カラム |
+|---|---|---|
+| ACWR (Acute:Chronic Workload Ratio) | トレーニング負荷 | `fitbit_mart.mart_acwr.acwr` |
+| トレーニング負荷 (Load) | トレーニング負荷 | `fitbit_mart.mart_load_daily.load` |
+| アクティブゾーン分 (AZM) | トレーニング負荷 | `fitbit_staging.stg_active_zone_minutes.value` |
+| 筋トレ達成週 | 筋トレ継続 | `fitbit_mart.mart_strength_weekly.meets_target` |
+
+### 🔑 学び: 紐付けの正体は「カラム単位アスペクト」ではなく EntryLink
+
+設計時は「カラム単位アスペクトキー（`...@Schema.<column>`）で紐付けることになりそう」と書いていたが、**外れ**。
+実体は **`definition` タイプの EntryLink**——2 つのエントリを結ぶ独立したリソースで、
+カラムは `entryReferences[].path = "Schema.<column>"` として指定する。
+
+```jsonc
+{
+  "entry_link_type": "projects/dataplex-types/locations/global/entryLinkTypes/definition",
+  "entry_references": [
+    { "name": ".../entryGroups/@bigquery/entries/...tables/mart_acwr",
+      "path": "Schema.acwr", "type": "SOURCE" },      // データ資産側
+    { "name": ".../entryGroups/@dataplex/entries/.../glossaries/health-metrics/terms/acwr",
+      "type": "TARGET" }                              // 用語側
+  ]
+}
+```
+
+そして **EntryLink は Terraform provider にも gcloud にも存在しない**（`terraform providers schema` と
+`gcloud dataplex --help` の両方で確認。あるのは REST の `entryGroups.entryLinks` のみ）。
+Glossary / Category / Term は TF で書けたので、S5 は 1 ストーリーの中で管理手段が 2 つに割れた。
+
+> **TF 管理境界（S4 の原則の再適用）**: EntryLink の実体は Dataplex が自動生成する
+> `@bigquery` エントリグループ配下に作られる＝ TF 管理外。だから gcloud/REST 側で作るのが正しく、drift しない。
+> S4 の「`@bigquery` エントリへのアスペクト付与は gcloud」と同じ構図。**管理主体と操作手段を一致させる**。
+
+### 🔑 学び: 公式ドキュメントの `lookupEntryLinks` は HTTP メソッドが間違っている
+
+リンクを逆引きする `lookupEntryLinks` について、[公式ドキュメント](https://cloud.google.com/dataplex/docs/manage-glossaries)の
+curl 例は `-X POST` だが、**API discovery document 上は GET** で、POST で叩くとルーティングされず
+**HTML の 404 ページ**が返る（JSON ですらないので `jq` がパースエラーで落ちる）。
+
+```bash
+curl -s "https://dataplex.googleapis.com/\$discovery/rest?version=v1" \
+  | jq '.resources.projects.resources.locations.methods.lookupEntryLinks.httpMethod'   # => "GET"
+```
+
+`gcloud` にコマンドが無い API を触るときは、ドキュメントの curl 例より discovery document を信じるほうが速い。
+
+### 🔑 学び: グロッサリは検索を橋渡ししない
+
+用語を紐付ければ「怪我」で `mart_acwr` が引けるようになる——と期待したが、**ならない**。
+
+| クエリ | ヒットするもの |
+|---|---|
+| `怪我` | ACWR **用語** / トレーニング負荷 **カテゴリ**（`mart_acwr` は出ない） |
+| `日曜` | 筋トレ達成週 **用語**（`mart_strength_weekly` は出ない） |
+| `Workload` | ACWR **用語**のみ |
+| `meets_target` | `mart_strength_weekly` **テーブル**のみ（用語は出ない） |
+
+用語は用語として、資産は資産としてヒットする。業務語彙から資産に到達する経路は
+「検索で**用語**に当たる → その用語のリンクを辿って資産に降りる」であって、検索インデックスの統合ではない。
+グロッサリの価値は検索の水増しではなく、**列名を見た人が定義に辿り着けること**にある。
+
+> **紛らわしい観察**: `Acute` で検索すると `mart_acwr` もヒットするので、一瞬「リンク経由で引けた」と錯覚した。
+> 実際は Catalog search が**列名の部分一致**を拾っているだけだった（`acute_7d` 列がある）。
+> 同様に `Ratio` は `du(ratio)n_minutes` 列を持つマートを軒並みヒットさせる。3 文字未満（`Ac`）は 0 件。
+> 「なぜヒットしたか」を確かめずに機能の効果と決めつけると、間違った結論を文書に残すことになる。
+
+### 🔑 学び: 存在しないカラムは弾かれる（サイレントに作られない）
+
+`path` に実スキーマに無い列を渡すと `404 NOT_FOUND` で明示的に落ちる。
+
+```
+Path `Schema.does_not_exist` in Entry `...tables/mart_acwr` does not exist.
+```
+
+S4 の「番号表記の `aspect=` 述語はエラーにならず 0 件を返す」というサイレントな空振りとは対照的で、
+こちらは行儀が良い。おかげで**列のリネームに気付ける**（リンクが張れなくなる）。
+
+なお同じ `entry_link_id` への再 POST は **409 ALREADY_EXISTS**。スクリプトは
+「テーブル名＋カラム名から決定的な ID を組み立て、GET してから POST」で冪等にした。
+
+### 🔑 設計判断: 定義の原典は `about.md` に置く
+
+同じ ACWR の定義が **Evidence の [`reports/pages/about.md`](../reports/pages/about.md)** と
+**Dataplex の用語** の 2 箇所にある。前者はダッシュボード読者が読むもの、後者はカタログを検索する人が読むもので、
+読者も配信経路も違う。今回は `about.md` を原典と決め、`glossary.tf` にはそこから写した定義を置いた
+（`glossary.tf` の冒頭コメントに明記）。
+
+これは**手動同期＝将来ズレる**という負債を承知で受け入れた選択。自動化するなら「`about.md` を機械可読にして
+`glossary.tf` を生成」あるいは「グロッサリを原典にして Evidence ページを生成」のどちらかに倒すことになる。
+用語 4 本の段階でその機構を作るのは早すぎる。
+
+### 検証結果
+
+`terraform apply` は 7 リソース（Glossary 1 / Category 2 / Term 4）を作成し、**apply 後の `terraform plan` は差分なし**。
+リンク作成スクリプトは 2 回目以降すべて `skip`（冪等）。
+
+用語側からの逆引き（`lookupEntryLinks?entry_mode=TARGET`）:
+
+```
+--- term: acwr                 fitbit_mart.mart_acwr                 Schema.acwr
+--- term: training-load        fitbit_mart.mart_load_daily           Schema.load
+--- term: strength-target      fitbit_mart.mart_strength_weekly      Schema.meets_target
+--- term: active-zone-minutes  fitbit_staging.stg_active_zone_minutes Schema.value
+```
+
+資産側からの逆引き（`entry_mode=SOURCE`）でも `mart_acwr` → `path=Schema.acwr` → `term=acwr` を確認。
+**双方向に辿れている**（コンソール上の見え方は目視確認に委ねる）。
+
+用語そのものも Catalog エントリになる（`entryType=.../entryTypes/glossary-term`、`@dataplex` エントリグループ配下）。
+つまり S4 で作った Entry と同じ土俵に乗っており、`gcloud dataplex entries search` で普通に引ける。
+
+### 残る疑問（未検証）
+
+- **SQLMesh がビューを作り直したときリンクは生き残るか**。EntryLink は `@bigquery` の自動生成エントリを
+  参照しているので、エントリが再作成されるとリンクが消える可能性がある。日次で確認する仕組みは入れていない。
+- **列を削除／リネームしたとき**、既存リンクがどうなるか（自動削除か、宙に浮くか）。
+
+どちらも「リンクが静かに失われる」形で壊れうる。S3 の教訓（サイレント失敗は最悪）からすれば、
+`--verify` を Daily Build に best-effort で組み込んで件数を監視するのが筋。今回は runbook 止まり。
+
+### コスト
+
+S4 の Catalog エントリと同じく **DCU を消費しない**。メタデータストレージのみで実質 **$0**。
 
 ---
 
@@ -433,5 +558,5 @@ Catalog の Entry / Aspect は **DCU を消費しない**（DataScan と違い c
 - 対象 `mart_steps_daily` は 98 行×2 列と極小 → 1 回 ≈ 0.017 DCU-hour ≈ **$0.0015/回**。
   品質を毎日 1 回 × 30 日 ≈ **月 $0.05 未満（数円〜十数円）**、実消費が数倍でも月 $1 未満。数ドルには届かない。
 - 課金 SKU は Cloud Billing で `goog-dataplex-workload-type` 系ラベルを数日観察（lineage の runbook と同じ手法）。
-- 学習が済んだら `cd terraform && terraform destroy` でスキャンを削除（`dataplex` API は
-  `disable_on_destroy=false` のため無効化しない）。
+- 学習が済んだら `./scripts/dataplex_glossary_links.sh --delete`（TF 管理外の EntryLink）→
+  `cd terraform && terraform destroy` の順で削除（`dataplex` API は `disable_on_destroy=false` のため無効化しない）。
