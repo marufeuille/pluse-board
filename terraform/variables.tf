@@ -29,6 +29,13 @@ variable "enable_catalog_publishing" {
   default     = true
 }
 
+# --- カタログ（S4） --------------------------------------------------------
+variable "catalog_data_owner" {
+  description = "Catalog アスペクト data_owner に入れる管理責任者（メール / チーム）"
+  type        = string
+  default     = "marufeuille@gmail.com"
+}
+
 # --- IAM（追記型のみ） -----------------------------------------------------
 # AGENTS.md により IAM 変更は要承認。ローカル実行者は既に Owner 相当のため付与不要だが、
 # S3 で CI SA が DataScan を起動し結果を読むため、ユーザー承認のうえ既定 true にした。

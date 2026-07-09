@@ -10,7 +10,7 @@ pluse-board のデータパイプライン
 1. **OpenLineage 仕様そのもの**（Run / Job / Dataset / Facet）を reference 実装 **Marquez** の UI で体感する。
 2. **GCP ガバナンス**として、OpenLineage イベントと BigQuery 自動リネージが Dataplex 上で 1 枚のグラフに統合される様子を見る。
 
-> **Status**: Phase 0（BQ 自動リネージ有効化）・Phase 1（Python 取り込みの OpenLineage 自作）・Phase 2（SQLMesh モデル評価の OpenLineage 計装）は**実装済み・検証済み**（Marquez / Dataplex 両方で確認）。台帳（カスタムエントリ登録）は別 beads タスク。
+> **Status**: Phase 0（BQ 自動リネージ有効化）・Phase 1（Python 取り込みの OpenLineage 自作）・Phase 2（SQLMesh モデル評価の OpenLineage 計装）は**実装済み・検証済み**（Marquez / Dataplex 両方で確認）。台帳（カスタムエントリ登録）は [`dataplex-governance-stories.md`](dataplex-governance-stories.md) の S4 で回収済み。
 
 ## 全体像（3 層のリネージ）
 
@@ -268,13 +268,13 @@ Knowledge Catalog には 2 つのサブシステムがある:
 
 - BQ テーブルのノードがクリックして中身を見られるのは、Catalog エントリが自動生成されるから。
 - 外部ノード `custom:googlehealth:...` は lineage が辺を描くための参照ノードで、Catalog エントリ本体は無い → 詳細ペインが「エントリが存在しない」と出る（**想定どおり**、lineage 目的では問題なし）。
-- 外部ソースも検索可能な一級エントリにしたい場合は、Entry Group + FQN 一致の Entry を手動作成する（[ingest-custom-sources](https://docs.cloud.google.com/dataplex/docs/ingest-custom-sources)）。→ 別 beads タスクで対応。
+- 外部ソースも検索可能な一級エントリにしたい場合は、Entry Group + FQN 一致の Entry を手動作成する（[ingest-custom-sources](https://docs.cloud.google.com/dataplex/docs/ingest-custom-sources)）。→ **S4 で実装・検証済み**（`terraform/catalog.tf`。[`dataplex-governance-stories.md`](dataplex-governance-stories.md) の S4 節）。
 
 ---
 
 ## 次のステップ
 
 - **CI 組込み（済）**: `daily.yml` の ingest（Phase 1）・SQLMesh（Phase 2）両ステップに lineage 用 env を注入し、WIF の access_token で Dataplex へ投入。`uv sync` に `--only-group lineage` を追加。既定 no-op のため段階的に有効化できる。
-- **台帳（カスタムエントリ登録）**: Health API 外部ソースを Knowledge Catalog の一級エントリにする（beads タスク管理）。
+- **台帳（カスタムエントリ登録）（済）**: Health API 外部ソースを Knowledge Catalog の一級エントリにした。Entry Group + FQN 一致の Entry + ガバナンスアスペクトを `terraform/catalog.tf` で管理（S4）。
 - **`sqlmesh-openlineage` の親解決取り込み**: input dataset 名のクォート問題は上流 GitHub main で解決済み。次リリースが出たら `run_with_lineage.py` の `_patch_dataset_naming` を簡素化できるか再評価する。
-- **Dataplex ガバナンス機能の学習**: lineage（辺）の先に、データ品質 / プロファイリング / カタログ / グロッサリ / データプロダクトを実データで触る検証ストーリー集 → [`dataplex-governance-stories.md`](dataplex-governance-stories.md)。S1/S2（プロファイル/品質スキャン）は初 IaC の [`../terraform/`](../terraform/) で実装・検証済み。
+- **Dataplex ガバナンス機能の学習**: lineage（辺）の先に、データ品質 / プロファイリング / カタログ / グロッサリ / データプロダクトを実データで触る検証ストーリー集 → [`dataplex-governance-stories.md`](dataplex-governance-stories.md)。S1/S2（プロファイル/品質スキャン）・S3（CI/Slack 連携）・S4（カタログエントリ＋アスペクト）は実装・検証済み。インフラは初 IaC の [`../terraform/`](../terraform/) に集約。残るは S5（グロッサリ）/ S6（データプロダクト）。

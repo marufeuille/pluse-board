@@ -19,11 +19,11 @@ OpenLineage の Phase 0–2（[`openlineage-dataplex-design.md`](openlineage-dat
 | **S1** | データプロファイリングスキャン | ルールを書かずに列統計を自動取得＝品質ルールの根拠 | ✅ 実装・検証済み |
 | **S2** | データ品質スキャン（AutoDQ） | ドメインルールで継続監視。**SQLMesh audit との役割分担** | ✅ 実装・検証済み |
 | **S3** | DQ の CI/Slack 連携 | 実行後ガバナンススキャン。best-effort no-op で `daily.yml` へ | ✅ 実装・検証済み |
-| **S4** | カタログエントリ＋アスペクト | 外部ソース一級化＋メタデータ台帳。既存 deferred『台帳』回収 | 📄 設計のみ |
+| **S4** | カタログエントリ＋アスペクト | 外部ソース一級化＋メタデータ台帳。既存 deferred『台帳』回収 | ✅ 実装・検証済み |
 | **S5** | ビジネスグロッサリ | 技術メタデータ↔ビジネス定義の橋渡し | 📄 設計のみ |
 | **S6** | データプロダクト | 消費者に見せる単位。lineage/DQ/用語を 1 プロダクトに集約 | 📄 設計のみ |
 
-インフラは初の IaC として [`../terraform/`](../terraform/) に集約（S1〜S3 を管理。S4 以降で拡張）。
+インフラは初の IaC として [`../terraform/`](../terraform/) に集約（S1／S2／S4 を管理。S5 以降で拡張）。
 
 ---
 
@@ -280,19 +280,120 @@ FAIL 経路では `notify_dq` が発火し、beads issue `pluse-board-dyt` が s
 
 ---
 
-## S4: カタログエントリ＋アスペクト 📄（設計のみ）
+## S4: カタログエントリ＋アスペクト ✅
 
 **狙い**: 既存の未着手『台帳』回収（[`openlineage-dataplex-design.md`](openlineage-dataplex-design.md) の「次のステップ」）。
-lineage の**参照ノード**（`custom:googlehealth:activity/*`）と Catalog **エントリ**の違いを実践する。
+lineage の**参照ノード**と Catalog **エントリ**の違いを、実物を作って体感する。
 
-- **(a) 外部ソースの一級エントリ化**: Entry Group を作り、FQN が lineage ノードと一致する Entry を登録
-  （[ingest-custom-sources](https://docs.cloud.google.com/dataplex/docs/ingest-custom-sources)）。
-  → lineage グラフの外部ノードをクリックすると「エントリなし」ではなく実体（説明・スキーマ）が見えるようになる。
-- **(b) Aspect Type**: `data-owner` / `update-frequency` / `sensitivity=health(PII)` などの構造化メタデータ型を定義し、
-  `mart_*` エントリに付与。
-- **(c) 検索**: Dataplex Catalog search で属性検索（`sensitivity=health` 等）がヒットすることを確認。
-- Terraform 対応: `google_dataplex_entry_group` / `google_dataplex_aspect_type` / `google_dataplex_entry` は一部対応。
-  TF で書けない部分は gcloud/コンソール併用（対応状況の確認自体が学び）。
+lineage は辺を描くために FQN を参照するだけで、エントリの実体を作らない。だから
+`custom:googlehealth:activity/*` をクリックすると「エントリが存在しない」と出ていた。
+**同じ FQN を持つ Entry を後から登録すると、その参照が実体に解決される**——これが S4 の核心。
+
+### 実装
+
+| 何を | どこで |
+|---|---|
+| Entry Group `googlehealth-sources`（`asia-northeast1`） | `terraform/catalog.tf` |
+| Entry × 3（FQN が lineage ノードと厳密一致） | 同上（`for_each` で `ENABLED_DATA_TYPES` と対応） |
+| Aspect Type `governance-metadata`（`data_owner` / `update_frequency` / `sensitivity`） | 同上 |
+| 既存 BigQuery エントリ `mart_steps_daily` への付与 | `gcloud dataplex entries update-aspects`（`terraform/README.md` の runbook） |
+
+エントリ ID は `activity-{exercise,steps,active_zone_minutes}`、FQN は `custom:googlehealth:activity/<data_type>`。
+`ingest/lineage.py` が emit する `namespace="custom"` + `name="googlehealth:activity/<data_type>"` と一致させている。
+
+### 🔑 学び: Terraform 対応は「一部」ではなく揃っていた
+
+設計時は「`entry_group` / `aspect_type` / `entry` は一部対応」と書いていたが、**provider google v6.50 では
+4 リソース（`entry_group` / `entry_type` / `aspect_type` / `entry`）すべて存在する**（`terraform providers schema -json` で確認）。
+S4 の (a)(b) は Terraform だけで書けた。
+
+TF で書けないのは **`@bigquery` エントリへのアスペクト付与**だけ。BigQuery のエントリは Dataplex が
+`@bigquery` エントリグループに**自動生成する TF 管理外リソース**なので、`google_dataplex_entry` では管理できない。
+
+> **drift の整理**: S1 では「TF 管理下の DataScan に gcloud で `--enable-catalog-publishing` を足すと drift する」
+> ので公開を見送った。今回は事情が逆で、**TF 管理下の 3 エントリには TF の `aspects` ブロックで付け、
+> TF 管理外の `@bigquery` エントリにだけ gcloud を使う**。管理境界と操作手段が一致しているので drift しない。
+
+### 🔑 学び: Entry 系はプロジェクト「番号」、search 述語はプロジェクト「ID」
+
+同じアスペクトを指すのに、API と検索で表記が違う。
+
+| 文脈 | 表記 | 例 |
+|---|---|---|
+| `google_dataplex_entry` の `project` / `entry_type` | **番号** | `projects/655216118709/locations/global/entryTypes/generic` |
+| アスペクトキー（TF の `aspect_key` / gcloud の `--aspects` JSON) | **番号** | `274885157237.asia-northeast1.governance-metadata` |
+| Catalog search の `aspect=` 述語 | **ID** | `aspect=pluse-board.asia-northeast1.governance-metadata` |
+
+`entry_type` に `projects/dataplex-types/...`（gcloud が返す ID 表記）を書くと **`terraform validate` が弾く**
+（`Expected format: 'projects/<project-number>/<anything>'`）。`dataplex-types` の番号は `655216118709`。
+逆に search で番号表記を渡すと**エラーにならず 0 件が返る**——サイレントに空振りするので質が悪い。
+
+### 🔑 学び: `generic` Entry Type は `generic` Aspect を必須で要求する
+
+カスタムエントリに使えるシステム Entry Type は再利用可能な `generic` のみ（`bigquery-table` 等は restricted）。
+ところが `generic` は `requiredAspects` に**同名の `generic` Aspect Type** を持つ。知らずに apply すると:
+
+```
+Error 400: Missing required Aspect(s): projects/655216118709/locations/global/aspectTypes/generic
+```
+
+`generic` アスペクト自体は `type` / `system` の 2 フィールド（どちらも optional）だけ。**中身は空でもよいが、
+アスペクトとしては付いていなければならない**。`catalog.tf` では `type="activity-stream"` / `system="Google Health API"` を入れた。
+
+### 検証結果
+
+エントリと FQN（`gcloud dataplex entries describe`）:
+
+| 確認項目 | 結果 |
+|---|---|
+| `fullyQualifiedName` | `custom:googlehealth:activity/exercise` ✅ lineage ノードと一致 |
+| アスペクト | `274885157237.asia-northeast1.governance-metadata`（HEALTH / DAILY / owner）＋ `655216118709.global.generic` |
+| `entryType` | `projects/655216118709/locations/global/entryTypes/generic` |
+| apply 後の `terraform plan` | **差分なし**（番号表記でも恒常 diff は出ない） |
+
+lineage 側との突き合わせ（Data Lineage API `:searchLinks`）:
+
+```
+custom:googlehealth:activity/exercise  ->  bigquery:pluse-board.fitbit_raw.exercise
+```
+
+lineage が記録している FQN と Catalog エントリの FQN が**両側の API で文字列一致**していることを確認した
+（コンソールでの詳細ペインの見え方は目視確認に委ねる）。
+
+`@bigquery` の `mart_steps_daily` への付与:
+
+- エントリ ID は `DATASET.TABLE` ではなく**フルリソースパス**
+  （`.../entryGroups/@bigquery/entries/bigquery.googleapis.com/projects/.../datasets/fitbit_mart/tables/mart_steps_daily`）。
+  公式ドキュメントの `DATASET.TABLE` 表記では `NOT_FOUND` になる。
+- `update-aspects` は**既存アスペクトを保ったままマージ**する。付与後も
+  `bigquery-view` / `data-quality-scorecard`（S2 の catalog publishing の成果）/ `schema` / `usage` は残った。
+- リージョナル（`asia-northeast1`）の Aspect Type を、同リージョンの `@bigquery` エントリに問題なく付与できた。
+
+### 🔑 学び: Catalog search の値検索は `aspect:` 接頭辞が要る
+
+`sensitivity=HEALTH` と素直に打っても **0 件**。正しくは `aspect:<aspect_type_id>.<field><op><value>`。
+実測（対象は custom 3 本 + `mart_steps_daily` の計 4 本）:
+
+| クエリ | ヒット |
+|---|---|
+| `googlehealth`（フリーテキスト） | 3（custom のみ） |
+| `aspect:governance-metadata`（部分一致・存在検索） | **4** |
+| `aspect=pluse-board.asia-northeast1.governance-metadata`（完全一致） | **4** |
+| `aspect=274885157237.asia-northeast1.governance-metadata`（番号表記） | 0 |
+| `aspect:governance-metadata.sensitivity=HEALTH` | **4** |
+| `aspect:governance-metadata.sensitivity=PII` | 0 |
+| `aspect:governance-metadata.update_frequency=DAILY` | **4** |
+| `aspect:governance-metadata.data_owner:marufeuille`（`:` は部分一致） | **4** |
+| `sensitivity=HEALTH`（接頭辞なし） | 0 |
+
+`=PII` / `=WEEKLY` が 0 件で `=HEALTH` / `=DAILY` が 4 件なので、**存在検索ではなく値でフィルタされている**ことを確認できた。
+文字列は `=`（完全一致）と `:`（部分一致）、数値は比較演算子も使える。
+インデックス反映の遅延は体感されず、apply 直後から検索できた。
+
+### コスト
+
+Catalog の Entry / Aspect は **DCU を消費しない**（DataScan と違い compute が走らない）。課金対象はメタデータ
+ストレージのみで、エントリ数本・数百バイトのアスペクトでは実質 **$0**。S1/S2 の DataScan とは性質が異なる。
 
 ---
 
@@ -306,7 +407,9 @@ lineage の**参照ノード**（`custom:googlehealth:activity/*`）と Catalog 
   - **アクティブゾーン分**（AZM）→ `stg_active_zone_minutes.value`
   - **筋トレ達成**（週 3 回以上で `meets_target=true`）→ `mart_strength_weekly.meets_target`
 - カラムのエントリから用語定義に辿れることを確認。
-- Terraform 対応は限定的 → gcloud/コンソールが主。
+- Terraform 対応: provider v6.50 には `google_dataplex_glossary` / `_category` / `_term` が**ある**
+  （S4 で Catalog 系リソースの実在を確認した際に併せて判明）。カラムへの紐付けは
+  カラム単位アスペクトキー（`...@Schema.<column>`）を使うことになりそうで、そこは要検証。
 
 ---
 
