@@ -1,8 +1,9 @@
 # terraform/ — pluse-board 初の IaC（Dataplex ガバナンス）
 
-このリポジトリ初の Infrastructure-as-Code。まずは Dataplex の
-**データプロファイルスキャン（S1）** と **データ品質スキャン（S2）** のみを管理する。
-以降のストーリー（S3–S6）で拡張していく。設計とストーリー全体は
+このリポジトリ初の Infrastructure-as-Code。Dataplex の
+**データプロファイルスキャン（S1）**・**データ品質スキャン（S2）**（`datascans.tf`）と、
+**カタログエントリ＋アスペクト（S4）**（`catalog.tf`）を管理する。
+以降のストーリー（S5–S6）で拡張していく。設計とストーリー全体は
 [`../docs/dataplex-governance-stories.md`](../docs/dataplex-governance-stories.md) を参照。
 
 ## 前提
@@ -27,7 +28,7 @@ terraform init
 # 2. 差分確認（何が作られるか）
 terraform plan
 
-# 3. 適用（API 有効化 + DataScan 2 本を作成）
+# 3. 適用（API 有効化 + DataScan 2 本 + Entry Group / Aspect Type / Entry 3 本）
 terraform apply
 
 # 4. スキャン実行（どちらも on_demand）
@@ -37,6 +38,9 @@ terraform output run_commands
 gcloud dataplex datascans run mart-steps-daily-profile --location=asia-northeast1 --project=pluse-board
 # 品質を手元から即時に走らせたいとき（CI を待たずに）
 gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast1 --project=pluse-board
+
+# 5. カタログの確認（S4）
+terraform output catalog_search_commands
 ```
 
 ## トリガー
@@ -54,7 +58,36 @@ gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast
 | 変数 | 既定 | 意味 |
 |---|---|---|
 | `enable_catalog_publishing` | `true` | 品質結果を Catalog / BigQuery「データ品質」タブに公開 |
+| `catalog_data_owner` | `marufeuille@gmail.com` | S4 の台帳アスペクト `data_owner` に入れる管理責任者 |
 | `grant_ci_datascan_role` | `true` | CI SA に `dataScanEditor` + `dataScanDataViewer` を**追記**付与（S3 の CI 連携に必須） |
+
+## S4: `@bigquery` エントリへのアスペクト付与（手動 runbook）
+
+`catalog.tf` が作る 3 つのカスタムエントリには Terraform の `aspects` ブロックでアスペクトが付く。
+一方 **BigQuery のエントリは Dataplex が `@bigquery` エントリグループに自動生成する TF 管理外リソース**で、
+`google_dataplex_entry` では管理できない。こちらへの付与は gcloud で一度だけ行う。
+
+```bash
+# 1. エントリ ID はフルリソースパス形式（DATASET.TABLE ではない）
+ENTRY="projects/pluse-board/locations/asia-northeast1/entryGroups/@bigquery/entries/bigquery.googleapis.com/projects/pluse-board/datasets/fitbit_mart/tables/mart_steps_daily"
+
+# 2. アスペクトキーはプロジェクト「番号」表記（terraform output governance_aspect_key）
+cat > aspects.json <<'JSON'
+{
+  "274885157237.asia-northeast1.governance-metadata": {
+    "data": { "data_owner": "marufeuille@gmail.com", "update_frequency": "DAILY", "sensitivity": "HEALTH" }
+  }
+}
+JSON
+
+# 3. 付与（update-aspects は既存アスペクトを保ったままマージする）
+gcloud dataplex entries update-aspects "$ENTRY" --aspects=aspects.json
+gcloud dataplex entries describe "$ENTRY" --view=ALL --format="value(aspects)"
+```
+
+TF 管理下は TF、管理外は gcloud —— 管理境界と操作手段が一致しているので drift しない
+（S1 でプロファイルの `--enable-catalog-publishing` を見送ったのは、TF 管理下のリソースに
+gcloud で設定を足すと drift するからだった。今回は事情が違う）。
 
 ## IAM の方針（重要）
 
@@ -87,7 +120,15 @@ terraform init -migrate-state
 `on_demand` トリガーなので放置課金は最小。学習が済んだらスキャンを削除:
 
 ```bash
-terraform destroy   # DataScan を削除（dataplex API は disable_on_destroy=false のため無効化しない）
+terraform destroy   # DataScan / Entry Group / Aspect Type / Entry を削除
+                    # （dataplex API は disable_on_destroy=false のため無効化しない）
+```
+
+`terraform destroy` は **`@bigquery` エントリに gcloud で足したアスペクトを消さない**（TF 管理外のため）。
+必要なら別途:
+
+```bash
+gcloud dataplex entries modify "$ENTRY" --remove-aspects=274885157237.asia-northeast1.governance-metadata
 ```
 
 ## コスト
@@ -102,3 +143,6 @@ Dataplex DataScan は premium processing = **$0.089/DCU-hour・無料枠なし**
 → 数ドルには全く届かないのでデイリー実行で問題ない。ただし premium は無料枠対象外なので厳密には $0 ではない。
 既存の予算アラート（`1000JPY`）が効いていることを確認し、課金 SKU は Cloud Billing で
 `goog-dataplex-workload-type` 系ラベルを数日観察する。
+
+一方 **S4 のカタログエントリ／アスペクトは DCU を消費しない**（DataScan と違い compute が走らない）。
+課金対象はメタデータストレージのみで、エントリ数本・数百バイトのアスペクトでは実質 **$0**。
