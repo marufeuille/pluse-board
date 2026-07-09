@@ -158,9 +158,20 @@ jobs:
           bd dolt push || (bd dolt pull && bd dolt push)
 
       - name: Notify Slack
+        id: slack
         if: ${{ steps.beads.outputs.dry_run != 'true' && steps.beads.outputs.channel_id != '' }}
+        # 通知が届かなくても起票自体は済んでいるので、ジョブは落とさず可視化に留める。
+        continue-on-error: true
         uses: slackapi/slack-github-action@v2
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload-file-path: ./slack-payload.json
+          # 既定の errors:false は Slack が ok:false（not_in_channel 等）を返しても
+          # ステップを success にする＝「緑なのに通知が届かない」サイレント失敗になる。
+          errors: true
+
+      - name: Report Slack failure
+        if: ${{ steps.slack.outcome == 'failure' }}
+        run: |
+          echo "::error::Slack 通知に失敗した（beads 起票は成功している）。Slack App が起票元チャンネルに追加されているか、token に chat:write スコープがあるかを確認する。"
