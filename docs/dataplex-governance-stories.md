@@ -18,12 +18,12 @@ OpenLineage の Phase 0–2（[`openlineage-dataplex-design.md`](openlineage-dat
 |---|---|---|---|
 | **S1** | データプロファイリングスキャン | ルールを書かずに列統計を自動取得＝品質ルールの根拠 | ✅ 実装・検証済み |
 | **S2** | データ品質スキャン（AutoDQ） | ドメインルールで継続監視。**SQLMesh audit との役割分担** | ✅ 実装・検証済み |
-| **S3** | DQ の CI/Slack 連携 | 実行後ガバナンススキャン。best-effort no-op で `daily.yml` へ | 📄 設計のみ |
+| **S3** | DQ の CI/Slack 連携 | 実行後ガバナンススキャン。best-effort no-op で `daily.yml` へ | ✅ 実装・検証済み |
 | **S4** | カタログエントリ＋アスペクト | 外部ソース一級化＋メタデータ台帳。既存 deferred『台帳』回収 | 📄 設計のみ |
 | **S5** | ビジネスグロッサリ | 技術メタデータ↔ビジネス定義の橋渡し | 📄 設計のみ |
 | **S6** | データプロダクト | 消費者に見せる単位。lineage/DQ/用語を 1 プロダクトに集約 | 📄 設計のみ |
 
-インフラは初の IaC として [`../terraform/`](../terraform/) に集約（S1/S2 を管理。S3 以降で拡張）。
+インフラは初の IaC として [`../terraform/`](../terraform/) に集約（S1〜S3 を管理。S4 以降で拡張）。
 
 ---
 
@@ -108,8 +108,9 @@ S2 のルールしきい値の「根拠＝現状把握」を得る。
 | `steps` ∈ [0, 100000] | VALIDITY | `range_expectation` | ドメイン上限（プロファイル実測 max=19253 → 安全側） |
 | `MAX(activity_date) >= today-2` | FRESHNESS | `table_condition_expectation` | 日次取り込みの鮮度を監視層でも |
 
-コミット構成に含まれるのはこの 4 ルール（全て正常系）。**トリガーは品質スキャンがデイリースケジュール
-（既定 `0 1 * * *` UTC = 10:00 JST。Daily Build の後に走るよう 1h バッファ）**、プロファイルは `on_demand`。
+コミット構成に含まれるのはこの 4 ルール（全て正常系）。トリガーは当初 S2 でデイリースケジュール
+（`0 1 * * *` UTC = 10:00 JST）にしていたが、**S3 で `on_demand` に戻し Daily Build から起動する**ようにした。
+プロファイルは当初から `on_demand`。
 
 ### 検証結果
 
@@ -140,8 +141,7 @@ terraform init
 terraform plan          # 差分確認（DataScan 2 本 + API 有効化。IAM 変更なし）
 terraform apply
 
-# 品質スキャンはデイリースケジュールで自動実行される。
-# プロファイル（on_demand）と、品質を即時に走らせたいときは手動実行:
+# 品質スキャンは Daily Build（S3）から起動される。手元から即時に走らせたいときは:
 gcloud dataplex datascans run mart-steps-daily-profile --location=asia-northeast1 --project=pluse-board
 gcloud dataplex datascans run mart-steps-daily-quality --location=asia-northeast1 --project=pluse-board
 
@@ -160,19 +160,100 @@ gcloud dataplex datascans jobs describe <JOB_ID> --datascan=mart-steps-daily-qua
 
 ---
 
-## S3: DQ の CI/Slack 連携 📄（設計のみ）
+## S3: DQ の CI/Slack 連携 ✅
 
 **狙い**: パイプライン実行後にガバナンススキャンを回すオーケストレーション。lineage と同じ **best-effort no-op** で。
 
-- `.github/workflows/daily.yml` の SQLMesh run 後に、`gcloud dataplex datascans run mart-steps-daily-quality ...` を
-  1 ステップ追加（`continue-on-error: true` 相当の best-effort。失敗してもパイプラインは止めない）。
-- CI SA `fitbit-dashboard@...` に **`roles/dataplex.dataScanEditor` が必要** → `terraform/variables.tf` の
-  `grant_ci_datascan_role=true` で追記付与（AGENTS.md により IAM 変更は要承認）。
-- **DQ FAIL の通知**: 既存の Slack/beads 連携（[`slack-integration-design.md`](slack-integration-design.md) /
-  `daily-build-triage.yml`）に、スキャンジョブの `dataQualityResult.passed=false` を検知して起票/通知するステップを足す。
-  Dataplex の `notification_report`（`google_dataplex_datascan` の `post_scan_actions.notification_report`）で
-  email 通知も可能だが、本リポは Slack 起票が既存基盤なのでそちらに寄せる。
-- 認証は lineage と同じ WIF access_token を流用できる。
+S2 の時点では品質スキャンは Dataplex 側のデイリースケジュール（10:00 JST）で孤立して回っており、
+**FAIL しても誰も気付けなかった**。S3 でスキャンを Daily Build に引き込み、「新鮮なデータの直後に同期的に
+合否を判定し、FAIL を既存の beads/Slack 基盤へ流す」形にした。
+
+### 実装
+
+| 何を | どこで |
+|---|---|
+| 品質スキャンのトリガーを `schedule` → `on_demand` へ | `terraform/datascans.tf` |
+| CI SA に DataScan ロールを追記付与（`grant_ci_datascan_role` 既定 `true`） | `terraform/iam.tf` |
+| スキャン起動 → 完了待ち → 合否抽出 | `scripts/dataplex_dq_scan.sh`（新規） |
+| SQLMesh run 直後にスキャンを実行し、FAIL なら通知ジョブへ | `.github/workflows/daily.yml` |
+
+- **認証**: lineage と同じ WIF の短命 access_token（`steps.auth.outputs.access_token`）を Bearer に流用。
+  gcloud CLI に依存せず Dataplex REST API（`dataScans/{id}:run` → `dataScanJobs.get?view=FULL`）を curl で叩く。
+- **通知**: `daily.yml` の `notify_dq` ジョブが `dataQualityResult.passed=false` のときだけ走り、
+  `daily-build-triage.yml` と同じ dedupe パターン（タイトル完全一致 → `bd comment` / なければ `bd q`）で beads 起票、
+  続けて Slack に通知する。Dataplex ネイティブの `post_scan_actions.notification_report`（email）は
+  「見ないので不採用」とし、既存の Slack/beads 基盤に寄せた。
+- **実行契機**: Daily Build の全実行（`push` 含む）。1 スキャン ≈ $0.0015 なのでコスト増は無視できる。
+- **直列化**: `notify_dq` の `concurrency.group` を `slack-beads-create.yml` と同じ `beads-slack` にして、
+  DoltHub への push レースを防ぐ。
+
+### 🔑 学び: `dataScanEditor` だけでは合否が読めない
+
+CI SA に必要なロールは 1 つではなく 2 つだった。
+
+| ロール | 与えるもの |
+|---|---|
+| `roles/dataplex.dataScanEditor` | スキャンの**起動**（`dataplex.datascans.run`）とジョブのメタデータ取得 |
+| `roles/dataplex.dataScanDataViewer` | ジョブ結果の**中身**（`dataQualityResult` = 合否・スコア・ルール別内訳）の閲覧 |
+
+Editor だけだとジョブ自体は GET できるのに `dataQualityResult` が返らない。ここで「レスポンスに `passed` が
+無い＝PASS」と読むと **FAIL を握り潰す**ので、スクリプトは `passed` が空なら `status=error` に倒している。
+
+### 🔑 学び: FAIL 時は `passed` フィールドが JSON から**消える**
+
+実装中に実データで踏んだ罠。Dataplex の REST レスポンスは proto3 の既定値省略に従うため、
+**`dataQualityResult.passed` は `false` のときフィールドごと存在しない**（`rules[].passed` も同じ）。
+
+```jsonc
+// PASS のジョブ
+{ "dataQualityResult": { "passed": true, "score": 100, ... } }
+// FAIL のジョブ … passed が無い！
+{ "dataQualityResult": {            "score": 80,  ... } }
+```
+
+素直に書くと 2 通りの読み間違いが同時に起きる。
+
+| 素直な実装 | 実際の挙動 |
+|---|---|
+| `passed` が無い → 「結果を読めていない」と判定 | **FAIL がすべて `error` に化けて通知されない** |
+| `select(.passed == false)` で失敗ルールを抽出 | `null == false` は偽なので **1 件も拾えない** |
+
+対処: 結果を読めたかどうかは `has("dataQualityResult")` で判定し、`passed` は `// false` に倒す。
+失敗ルールの抽出は `select(.passed != true)`。S2 の故意 FAIL ジョブ（score 80）の実 JSON で両方を検証した。
+
+### 🔑 設計判断: 「測れなかった」と「品質が悪い」を分ける
+
+スクリプトの出力は 3 値。
+
+| status | 意味 | 挙動 |
+|---|---|---|
+| `pass` | 全ルール成立 | 何もしない |
+| `fail` | `dataQualityResult.passed=false` | `notify_dq` が beads 起票 + Slack 通知 |
+| `error` | 起動失敗・タイムアウト・結果が読めない | `::warning::` のみ。**通知しない** |
+
+`error` を通知に乗せないのは、品質の話ではなくインフラの話だから。ただしこれは
+「スキャンがずっと壊れていても静かに見逃す」というトレードオフでもある。将来は `error` の連続回数を
+数えて別経路（Daily Build triage 側）に上げるのが筋。
+
+いずれの status でも **exit 0**。lineage（`ingest/lineage.py`）と同じで、ガバナンス層の都合で
+パイプラインと Pages デプロイを止めない（`deploy` は `needs: build` のまま）。
+
+### 検証結果
+
+| ルート | 手段 | 結果 |
+|---|---|---|
+| PASS | 正常 4 ルールでスクリプトをローカル実行（実スキャン起動） | `status=pass` / `score=100` / exit 0 |
+| error | 存在しない `DATASCAN_ID` を渡す | 404 → `::warning::` / `status=error` / **exit 0** |
+| FAIL | S2 の故意 FAIL ジョブ（`steps <= 10000`、score 80）の実 JSON でパースを検証 | `status=fail` / 失敗ルール 1 件（`VALIDITY steps` passRatio 0.857、84/98） |
+
+FAIL 経路は、故意ルールを再 apply せずとも **S2 検証時のジョブ履歴が Dataplex に残っている**のでそれを
+`jobs/{id}?view=FULL` で取り直して実データ検証できた（インフラを汚さずに済む）。
+`notify_dq` ジョブ（beads 起票 + Slack）自体の実地確認は、main マージ後に一時ルールを apply して
+`gh workflow run daily.yml` する必要がある — **未実施**。
+
+> **Slack の前提**: `SLACK_BOT_TOKEN`（secret）と `SLACK_ALERT_CHANNEL_ID`（variable）が揃うまで
+> Slack ステップは `if: env.… != ''` でスキップされる（beads 起票だけで通知は成立する）。
+> job レベルの `if` からは `secrets` コンテキストを参照できないため、job レベル `env` に落として step の `if` で判定している。
 
 ---
 

@@ -64,12 +64,12 @@ resource "google_dataplex_datascan" "mart_steps_quality" {
     resource = local.target_resource
   }
 
-  # デイリー監視（cron は UTC）。対象が極小テーブルのため課金は月数円〜数十円。
+  # トリガーは on_demand。デイリー監視は Dataplex 側のスケジュールではなく
+  # daily.yml（Daily Build）の SQLMesh run 直後に CI から起動する（S3）。
+  # 新鮮なデータの直後に同期的に合否を判定でき、FAIL を beads/Slack に流せる。
   execution_spec {
     trigger {
-      schedule {
-        cron = var.quality_scan_cron
-      }
+      on_demand {}
     }
   }
 
