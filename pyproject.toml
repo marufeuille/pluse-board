@@ -8,9 +8,9 @@ dependencies = [
 
 [dependency-groups]
 ingest = [
-    "google-auth>=2.55.1",
+    "google-auth>=2.55.2",
     "google-auth-oauthlib>=1",
-    "google-cloud-bigquery>=3.42.1",
+    "google-cloud-bigquery>=3.42.2",
     "requests>=2.34.2",
     "pydantic>=2",
 ]
