@@ -3,7 +3,7 @@ name = "pluse-board"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "sqlmesh[web]>=0.235.4",
+    "sqlmesh[web]>=0.236.0",
 ]
 
 [dependency-groups]
