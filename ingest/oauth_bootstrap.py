@@ -11,6 +11,7 @@ import http.server
 import threading
 import urllib.parse
 import webbrowser
+from urllib.error import HTTPError
 from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 import json
@@ -77,11 +78,26 @@ def main():
 
     req = Request(TOKEN_URI, data=data, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
-    with urlopen(req) as resp:
-        token = json.loads(resp.read())
+    try:
+        with urlopen(req) as resp:
+            token = json.loads(resp.read())
+    except HTTPError as e:
+        # エラー応答の本文には失敗理由 (invalid_grant 等) が入っているので握りつぶさない。
+        body = e.read().decode(errors="replace")
+        raise RuntimeError(
+            f"トークン取得に失敗しました (HTTP {e.code}): {body}"
+        ) from e
+
+    refresh_token = token.get("refresh_token")
+    if not refresh_token:
+        raise RuntimeError(
+            "応答に refresh_token が含まれていません。"
+            "access_type=offline / prompt=consent で再認可してください。"
+            f" 応答: {token}"
+        )
 
     print("\n=== 取得した refresh token ===")
-    print(token["refresh_token"])
+    print(refresh_token)
     print("\nこの値を GitHub Secrets の GOOGLE_HEALTH_REFRESH_TOKEN に登録してください。")
 
 

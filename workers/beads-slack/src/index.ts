@@ -69,28 +69,43 @@ export default {
 
         // Best-effort early hint via response_url (ephemeral, valid 30 min).
         // The Actions workflow posts the authoritative "起票しました" result with the bot token.
-        if (responseUrl) {
-          const hint = ok
-            ? `起票依頼を送信しました（${issue.type}/P${issue.priority}）: ${issue.title}`
-            : "起票依頼の送信に失敗しました。GitHub 側を確認してください。";
-          try {
-            await fetch(responseUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text: hint }),
-            });
-          } catch {
-            // Ignore response_url failures; the workflow posts the authoritative result.
-          }
-        }
-      })().catch((err) => {
+        const hint = ok
+          ? `起票依頼を送信しました（${issue.type}/P${issue.priority}）: ${issue.title}`
+          : "起票依頼の送信に失敗しました。GitHub 側を確認してください。";
+        await notifySlack(responseUrl, hint);
+      })().catch(async (err) => {
+        // The user was told "起票中... 完了時に通知します。", so an unexpected
+        // failure must not stay silent — surface it back to Slack instead of
+        // only logging it.
         console.error("waitUntil failure", err);
+        await notifySlack(
+          responseUrl,
+          "起票処理でエラーが発生しました。時間をおいて再度お試しください。",
+        );
       }),
     );
 
     return json({ text: "起票中... 完了時に通知します。" });
   },
 };
+
+/**
+ * Best-effort ephemeral notification back to Slack via response_url.
+ * Failures here are logged (not swallowed silently) but never rethrown, since
+ * the Actions workflow posts the authoritative result.
+ */
+async function notifySlack(responseUrl: string, text: string): Promise<void> {
+  if (!responseUrl) return;
+  try {
+    await fetch(responseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch (err) {
+    console.error("response_url notify failed", err);
+  }
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
