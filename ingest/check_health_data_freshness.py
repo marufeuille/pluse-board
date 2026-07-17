@@ -12,23 +12,16 @@ This is intentionally conservative:
 
 import argparse
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from typing import Any
 
 from google.cloud import bigquery
 
-JST = timezone(timedelta(hours=9))
-
-
-def _today_jst() -> date:
-    return datetime.now(JST).date()
+from _common import bq_dataset_raw, bq_location, today_jst
 
 
 def _bq_settings() -> tuple[str, str, str]:
-    project = os.environ["PROJECT_ID"]
-    dataset = os.environ.get("BQ_DATASET_RAW") or "fitbit_raw"
-    location = os.environ.get("BQ_LOCATION") or "asia-northeast1"
-    return project, dataset, location
+    return os.environ["PROJECT_ID"], bq_dataset_raw(), bq_location()
 
 
 def _scalar(
@@ -66,7 +59,7 @@ def main() -> None:
     expected_date = (
         date.fromisoformat(args.expected_date)
         if args.expected_date
-        else _today_jst() - timedelta(days=1)
+        else today_jst() - timedelta(days=1)
     )
 
     project, dataset, location = _bq_settings()
