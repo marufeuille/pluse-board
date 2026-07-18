@@ -6,12 +6,14 @@ API 仕様変更時はこのファイルだけ修正すれば良い。
 
 import os
 import time
-from datetime import date, timedelta
+from datetime import date
 from typing import Generator
 
 import requests
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
+
+from _common import day_ranges
 
 BASE_URL = "https://health.googleapis.com/v4/users/me/dataTypes"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -62,11 +64,8 @@ class HealthApiClient:
         Health API は長期間リクエストで 503 を返しやすいため、内部で 1 日単位に分割する。
         data_type: "exercise" | "steps" | "active_zone_minutes"
         """
-        current = start
-        while current < end:
-            next_day = current + timedelta(days=1)
-            yield from self._fetch_chunk(data_type, current, min(next_day, end))
-            current = next_day
+        for day_start, day_end in day_ranges(start, end):
+            yield from self._fetch_chunk(data_type, day_start, day_end)
 
     def _fetch_chunk(
         self,
