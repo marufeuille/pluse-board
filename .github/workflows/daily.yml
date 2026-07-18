@@ -21,7 +21,7 @@ jobs:
       dq_job: ${{ steps.dq.outputs.job_name }}
       dq_failed_rules: ${{ steps.dq.outputs.failed_rules }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - id: auth
         uses: google-github-actions/auth@v3
@@ -175,7 +175,7 @@ jobs:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_CHANNEL_ID: ${{ vars.SLACK_ALERT_CHANNEL_ID }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-bd
         with:
           dolt-creds-key-id: ${{ secrets.DOLT_CREDS_KEY_ID }}
