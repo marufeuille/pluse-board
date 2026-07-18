@@ -23,7 +23,7 @@ jobs:
     steps:
       # 1. 失敗したDependabotのPRのブランチをチェックアウト
       - name: Checkout Dependabot PR Branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.event.workflow_run.pull_requests[0].head.repo.full_name }}
           ref: ${{ github.event.workflow_run.pull_requests[0].head.ref }}
