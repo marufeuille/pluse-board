@@ -9,11 +9,15 @@ on:
 jobs:
   jules-remediation:
     # 条件：PR Checkが「失敗」し、かつDependabotのPRである場合のみ実行
+    # workflow_run は特権コンテキスト（base repo の secrets / write token を持つ）で走る。
+    # actor が dependabot[bot] であることに加え、head が same-repo（fork ではない）で
+    # あることも確認し、fork ブランチを write token 付きで checkout する経路を塞ぐ。
     if: >
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.actor.login == 'dependabot[bot]' &&
-      github.event.workflow_run.pull_requests[0].number != null
+      github.event.workflow_run.pull_requests[0].number != null &&
+      github.event.workflow_run.pull_requests[0].head.repo.full_name == github.repository
     
     runs-on: ubuntu-latest
     permissions:

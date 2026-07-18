@@ -8,6 +8,7 @@ Google Health API の OAuth 2.0 認可フローを実行して refresh token を
 
 import argparse
 import http.server
+import secrets
 import threading
 import urllib.parse
 import webbrowser
@@ -22,6 +23,9 @@ TOKEN_URI = "https://oauth2.googleapis.com/token"
 REDIRECT_URI = "http://localhost:8080/callback"
 
 auth_code: str | None = None
+# CSRF 対策: 認可リクエストで送った state と callback で返ってきた state が
+# 一致した場合だけ code を受理する。
+expected_state: str | None = None
 
 
 class _CallbackHandler(http.server.BaseHTTPRequestHandler):
@@ -29,6 +33,12 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
         global auth_code
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query)
+        returned_state = params.get("state", [None])[0]
+        if not expected_state or returned_state != expected_state:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write("<p>state 不一致。認可を中断しました。</p>".encode())
+            return
         auth_code = params.get("code", [None])[0]
         self.send_response(200)
         self.end_headers()
@@ -49,6 +59,9 @@ def main():
     parser.add_argument("--client-secret", required=True)
     args = parser.parse_args()
 
+    global expected_state
+    expected_state = secrets.token_urlsafe(32)
+
     t = threading.Thread(target=_start_server, daemon=True)
     t.start()
 
@@ -59,6 +72,7 @@ def main():
         "scope": SCOPES,
         "access_type": "offline",
         "prompt": "consent",
+        "state": expected_state,
     }
     url = f"{AUTH_URI}?{urlencode(params)}"
     print(f"ブラウザで認可してください:\n{url}\n")
