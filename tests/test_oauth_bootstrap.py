@@ -24,7 +24,8 @@ def _make_handler(path):
 
 def test_callback_captures_auth_code(monkeypatch):
     monkeypatch.setattr(m, "auth_code", None, raising=False)
-    handler = _make_handler("/callback?code=the-code&scope=x")
+    monkeypatch.setattr(m, "expected_state", "st", raising=False)
+    handler = _make_handler("/callback?code=the-code&scope=x&state=st")
     handler.do_GET()
     assert m.auth_code == "the-code"
     assert handler._responses == [200]
@@ -33,9 +34,22 @@ def test_callback_captures_auth_code(monkeypatch):
 
 def test_callback_without_code_sets_none(monkeypatch):
     monkeypatch.setattr(m, "auth_code", "stale", raising=False)
-    handler = _make_handler("/callback")
+    monkeypatch.setattr(m, "expected_state", "st", raising=False)
+    handler = _make_handler("/callback?state=st")
     handler.do_GET()
     assert m.auth_code is None
+
+
+def test_callback_rejects_state_mismatch(monkeypatch):
+    # CSRF 対策: state 不一致（または期待値未設定）の callback は 400 で拒否し、
+    # code を受理しない。
+    monkeypatch.setattr(m, "auth_code", None, raising=False)
+    monkeypatch.setattr(m, "expected_state", "st", raising=False)
+    handler = _make_handler("/callback?code=evil&state=wrong")
+    handler.do_GET()
+    assert m.auth_code is None
+    assert handler._responses == [400]
+    assert "state 不一致".encode() in handler.wfile.getvalue()
 
 
 def test_log_message_is_silenced(capsys):
