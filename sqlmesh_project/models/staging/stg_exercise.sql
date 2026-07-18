@@ -6,7 +6,12 @@ MODEL (
 WITH deduped AS (
   SELECT raw
   FROM fitbit_raw.exercise
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY JSON_VALUE(raw, '$.name') ORDER BY 1) = 1
+  -- 同一 dataPoint（$.name）の再取り込みは updateTime が最新の行を採用する。
+  -- notes 等が後から更新されるケースで新しい方を残すため、順序を決定的にしている。
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY JSON_VALUE(raw, '$.name')
+    ORDER BY TIMESTAMP(JSON_VALUE(raw, '$.exercise.updateTime')) DESC
+  ) = 1
 )
 SELECT
   TIMESTAMP(JSON_VALUE(raw, '$.exercise.interval.startTime')) AS start_time,
@@ -19,8 +24,12 @@ SELECT
                                                               AS calories_kcal,
   CAST(JSON_VALUE(raw, '$.exercise.metricsSummary.distanceMillimeters') AS FLOAT64)
                                                               AS distance_mm,
+  CAST(JSON_VALUE(raw, '$.exercise.metricsSummary.distanceMillimeters') AS FLOAT64) / 1e6
+                                                              AS distance_km,
   CAST(JSON_VALUE(raw, '$.exercise.metricsSummary.steps') AS INT64)
                                                               AS steps,
   CAST(JSON_VALUE(raw, '$.exercise.metricsSummary.activeZoneMinutes') AS INT64)
-                                                              AS active_zone_minutes
+                                                              AS active_zone_minutes,
+  JSON_VALUE(raw, '$.exercise.notes')                         AS notes,
+  JSON_VALUE(raw, '$.dataSource.application.packageName')     AS source_app
 FROM deduped
