@@ -63,6 +63,20 @@ jobs:
         run: |
           uv run python ingest/check_health_data_freshness.py
 
+      # state DB(Neon) のスキーマを実行中の sqlmesh バージョンに追従させる。
+      # バージョン一致時は no-op。Dependabot が sqlmesh を上げた直後に
+      # "local is ahead of remote" で plan/run が落ちるのを防ぐ（例: 0.235.4→0.236.0）。
+      - name: Migrate SQLMesh state
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+          SQLMESH_STATE_HOST: ${{ secrets.SQLMESH_STATE_HOST }}
+          SQLMESH_STATE_USER: ${{ secrets.SQLMESH_STATE_USER }}
+          SQLMESH_STATE_PASSWORD: ${{ secrets.SQLMESH_STATE_PASSWORD }}
+        run: |
+          uv sync --only-group sqlmesh --only-group lineage
+          cd sqlmesh_project && uv run sqlmesh --gateway ci migrate
+
       # SQLMesh: コード変更(push)はモデル差分を prod に適用、
       # データ更新(schedule/dispatch)は incremental 区間を前進実行。
       # state は Neon(Postgres) に永続化（SQLMESH_STATE_* secrets）。
