@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 
 import pytest
 
@@ -10,18 +10,9 @@ import check_health_data_freshness as m
 
 
 # --------------------------------------------------------------------------- #
-# _today_jst / _bq_settings
+# _bq_settings
 # --------------------------------------------------------------------------- #
-def test_today_jst(monkeypatch):
-    class _FrozenDatetime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return datetime(2026, 1, 1, 20, 0, tzinfo=timezone.utc).astimezone(tz)
-
-    monkeypatch.setattr(m, "datetime", _FrozenDatetime)
-    assert m._today_jst() == date(2026, 1, 2)
-
-
+# today_jst は _common に移動したため tests/test_common.py で検証する。
 def test_bq_settings_defaults(monkeypatch):
     monkeypatch.setenv("PROJECT_ID", "proj")
     monkeypatch.delenv("BQ_DATASET_RAW", raising=False)
@@ -140,7 +131,7 @@ def test_main_zero_load_day_warns(monkeypatch, _main_env, capsys):
 def test_main_defaults_to_yesterday(monkeypatch):
     monkeypatch.setenv("PROJECT_ID", "proj")
     monkeypatch.setattr(m.bigquery, "Client", lambda project=None: object())
-    monkeypatch.setattr(m, "_today_jst", lambda: date(2026, 4, 10))
+    monkeypatch.setattr(m, "today_jst", lambda: date(2026, 4, 10))
     monkeypatch.setattr("sys.argv", ["prog"])
     captured = {}
 
