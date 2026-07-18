@@ -29,3 +29,20 @@ lineage = [
     # console を差し替え START/COMPLETE/FAIL + カラム lineage + 実行統計を emit。
     "sqlmesh-openlineage>=0.1.0",
 ]
+# pytest ベースの Python ユニットテスト。ingest / scripts のヘルパを外部依存
+# (BigQuery / Health API / GitHub API) をモックしてテストする。
+dev = [
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+
+[tool.coverage.run]
+branch = true
+source = ["ingest", "scripts", "sqlmesh_project"]
+
+[tool.coverage.report]
+show_missing = true
