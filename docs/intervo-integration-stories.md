@@ -1,5 +1,8 @@
 # intervo トレーニングデータ連携 — Story 集
 
+> **改訂 (sc-27 レビュー反映)**: AT Protocol / PDS 経由は撤回し、連携ハブを **Health Connect** に
+> 置き直した（intervo issue [#11](https://github.com/marufeuille/intervo/issues/11) の方針）。
+
 設計は [`intervo-integration-design.md`](./intervo-integration-design.md) を正とする。
 本ドキュメントは実装を段階的に切ったストーリー集。上から順に価値が出る順序で並べる。
 
@@ -7,58 +10,63 @@
 
 | # | Story | ねらい | リポ | 依存 | 状態 |
 |---|---|---|---|---|---|
-| **S0** | PDS 接続・raw 取り込みの疎通 | 個人 PDS の checkin/plan を BigQuery raw に落とす最小疎通 | pluse-board | — | 📄 計画 |
-| **S1** | Daily 種目一覧（予定値で先行） | plan の種目/セット/レップで「その日やった内容」を一覧 | pluse-board | S0 | 📄 計画 |
-| **S2** | intervo checkin の実績明細化 | checkin の `performed` に種目別 reps/sets を加算（後方互換） | intervo | — | 📄 計画 |
-| **S3** | Daily を実績値に切替 | S2 の明細で「スクワット 12×3」を実績表示（予定はフォールバック） | pluse-board | S1, S2 | 📄 計画 |
-| **S4** | Weekly レポート | 曜日分布・カテゴリ/種目内訳・頻度・進捗 | pluse-board | S1 | 📄 計画 |
-| **S5** | 強度の突合（応用） | Google Health の AZM/心拍を時間窓で突合し強度を補う | pluse-board | S1, S4 | 📄 計画 |
+| **S0** | Google Health API のセグメント露出を検証 | 既存 ingest だけで種目/回数が取れるか（経路1可否）を実データで確認 | pluse-board | — | 📄 計画 |
+| **S1** | intervo の HC 書き込みにセット粒度を加算 | `ExerciseSessionRecord` に segments/reps を付与（後方互換） | intervo | — | 📄 計画 |
+| **S2a** | 経路1: 既存 raw を拡張して取り込み | Google Health API が露出するなら `stg_exercise` を拡張 | pluse-board | S0, S1 | 📄 条件付き |
+| **S2b** | 経路2: Health Connect → BQ forwarder | 露出しないなら HC を直接読む forwarder を別 repo で（#11） | 別 repo | S1 | 📄 条件付き |
+| **S3** | Daily 種目一覧 | 「スクワット 12×3」を Daily で一覧 | pluse-board | S2a or S2b | 📄 計画 |
+| **S4** | Weekly レポート | 曜日分布・カテゴリ/種目内訳・頻度・進捗 | pluse-board | S3 | 📄 計画 |
+| **S5** | 強度の突合（応用） | Google Health の AZM/心拍を時間窓で突合し強度を補う | pluse-board | S3, S4 | 📄 任意 |
 | **S6** | 部位バランス（応用） | 種目→部位マッピングで push/pull/legs 内訳 | pluse-board | S4 | 📄 任意 |
 
-疎結合の契約は AT Protocol lexicon（`dev.marufeuille.workout.plan` / `.checkin`）に限定する。
+疎結合の契約は **Health Connect のデータモデル**に限定する（intervo の内部 DB/非公開 API に非依存）。
 
 ---
 
-## S0 — PDS 接続・raw 取り込みの疎通
+## S0 — Google Health API のセグメント露出を検証
 
-**価値**: intervo の公開出力（PDS）を pluse-board が読めることを確認し、以降の土台にする。
+**価値**: 一番安い経路1が使えるかを最初に確定させ、S2a/S2b の分岐を決める。
 
-- `ingest/pull_intervo_pds.py` を新規作成。`com.atproto.repo.listRecords` で
-  `dev.marufeuille.workout.checkin` と `.plan` を全ページ取得。
-- `fitbit_raw.intervo_checkin` / `fitbit_raw.intervo_plan` に `raw`(JSON)+`rkey`+`synced_at` で
-  冪等 upsert（既存 `pull_health_api.py` の DELETE→INSERT パターン踏襲）。
-- 資格情報を GitHub Secrets 化（`INTERVO_PDS_SERVICE_URL` / `_IDENTIFIER` / `_APP_PASSWORD`、read 専用）。
-- `daily.yml` の ingest に best-effort ステップ追加（失敗しても既存 Health API ingest を止めない）。
-- **完了条件**: 手動 dispatch で raw 2 テーブルにレコードが入り、件数が PDS と一致する。
+- 実データで `fitbit_raw.exercise` の JSON に `segment` / `repetitions` 相当が含まれるか確認する。
+  含まれるなら経路1（既存 ingest 拡張）で完結。含まれないなら経路2（forwarder）へ。
+- **完了条件**: 「Google Health API v4 は HC のセグメント/回数を露出する/しない」が結論づく。
 
-## S1 — Daily 種目一覧（予定値で先行）
+## S1 — intervo の HC 書き込みにセット粒度を加算（intervo リポ）
 
-**価値**: 要件① を最短で満たす。S2 完了前は plan の**予定**セット/レップで表示。
+**価値**: 要件を満たす唯一の必須改修。既存の HC 書き込みに**セット粒度を加算**（後方互換）。
 
-- `stg_intervo_plan`（`plan.exercises[]` を 1 種目 1 行に unnest）。
-- `stg_intervo_checkin`（session 属性）。
-- `mart_training_daily`（日 × 種目、`is_planned=TRUE`）と `mart_training_session`。
-- Evidence `reports/pages/training.md` に「日付選択 → その日の種目テーブル」。予定バッジを付ける。
-- **完了条件**: ある日を選ぶと「スクワット 3 セット × 12 回（予定）」等が並ぶ。
+- `HealthConnectWriter.write` の `ExerciseSessionRecord` に `segments: List<ExerciseSegment>` を付与。
+  `performedSetsJson`（既に companion にあるセット単位実績）を素材に、セット/種目を
+  `startTime`/`endTime`/`repetitions` で表現。既知種目は `EXERCISE_SEGMENT_TYPE_*` へマッピング。
+- **種目名の保持方針を決める**: (a) `notes` に構造化サマリ併記 / (b) 種目名→型マッピングを下流に持つ。
+- 任意: 予定を `PlannedExerciseSessionRecord` で書き「予定 vs 実績」に対応。
+- テスト追加。心拍は従来どおり `HeartRateRecord`。
+- **完了条件**: 新規セッションに segments/reps が入り、旧レコードは session 単位で従来どおり読める。
 
-## S2 — intervo checkin の実績明細化（intervo リポ）
+## S2a — 経路1: 既存 raw を拡張して取り込み（S0 が肯定なら）
 
-**価値**: 予定ではなく**実績**の粒度（実際に何回やったか）を PDS に出す。
+- `stg_exercise` を拡張し、JSON の segment/repetitions を種目/セット行へ展開。
+- `data_origin` 相当で intervo 由来を識別し、既存 `mart_strength_*` との二重計上を避ける。
+- **完了条件**: 既存 ingest のみで種目/セットが staging に出る。
 
-- `WorkoutPdsRecordMapper.mapCheckin` の `performed` に `exercises[]`
-  （種目別 `sets`/`reps[]`/`totalReps`/`durationSeconds[]`）を加算。`setCount` 等は残す。
-- `WorkoutPdsRecordMapperTest` にケース追加。心拍は引き続き非送信。
-- リリースノート（`docs/release-notes-<VERSION>.md`）を用意しタグ運用。
-- **完了条件**: 新規 checkin の `performed.exercises` に種目別実績が入る。旧 reader は無視できる。
+## S2b — 経路2: Health Connect → BQ forwarder（S0 が否定なら・別 repo）
 
-## S3 — Daily を実績値に切替
+**価値**: intervo issue #11 の実体。HC を直接読み BigQuery raw へ着地。
 
-**価値**: 「スクワット 12×3」を**実績**で表示（S2 未反映の旧レコードは予定へフォールバック）。
+- 独立 forwarder（HC read + WorkManager + `getChanges`）。`fitbit_raw.hc_exercise_session`
+  （`raw`+`data_origin`+`record_id`+`client_record_id`+`last_modified_time`）へ冪等 MERGE、
+  削除（tombstone）も転送。
+- HC READ 権限（`READ_HEALTH_DATA_HISTORY` / `READ_HEALTH_DATA_IN_BACKGROUND`）・Play 審査に対応。
+- intervo 専用にせず汎用 ELT にし、`dataOrigin.packageName` で intervo を絞る。
+- **完了条件**: HC の intervo セッション（+segments）が raw に着地し件数一致。
 
-- `stg_intervo_checkin_exercise`（`performed.exercises` を unnest、無ければ plan にフォールバックし
-  `is_planned` を立てる）。
-- `mart_training_daily` を実績優先に変更。Evidence で予定/実績を色分け。
-- **完了条件**: 明細ありは実績、なしは予定と一目で分かる。
+## S3 — Daily 種目一覧
+
+**価値**: 要件①。日付選択 → その日の種目テーブル（種目名・セット×レップ・時間）。
+
+- `stg_training_session` / `stg_training_set` → `mart_training_daily` / `mart_training_session`。
+- Evidence `reports/pages/training.md` に Daily 一覧。予定を書く場合は予定/実績を色分け。
+- **完了条件**: ある日を選ぶと「スクワット 3 セット × 12 回」等が並ぶ。
 
 ## S4 — Weekly レポート
 
@@ -72,22 +80,18 @@
 
 ## S5 — 強度の突合（応用）
 
-**価値**: intervo に無い「強度」を Google Health の AZM/心拍で補う。
-
-- intervo セッションと `stg_exercise`（`STRENGTH_TRAINING`）を completedAt/開始終了の時間窓で突合し
-  `mart_training_session_enriched`。ACWR（既存 `mart_acwr`）と併記。
+- intervo セッションと `stg_exercise`（`STRENGTH_TRAINING`）を時間窓で突合し
+  `mart_training_session_enriched`（種目明細＋AZM/心拍）。ACWR（既存 `mart_acwr`）と併記。
 - 突合の許容誤差・重複排除ルールを `about.md` に定義。
-- **完了条件**: セッション詳細に「種目明細（intervo）＋ AZM/心拍（Google Health）」が並ぶ。
 
 ## S6 — 部位バランス（任意）
 
-- 種目名→部位（push/pull/legs 等）のマッピング表を pluse-board 側に持ち、週次の部位内訳を出す。
-- intervo の内部仕様には依存しない（種目名/`exerciseType` のみ使用）。
+- 種目名→部位（push/pull/legs 等）のマッピング表を下流に持ち、週次の部位内訳を出す。
+  intervo の内部仕様には依存しない（種目名/型のみ使用）。
 
 ---
 
 ## bd / Shortcut への取り込み
 
-pluse-board は `bd`（beads）で課題管理する方針（`AGENTS.md`）。本 Story 集は
-epic 1 + 子タスク（S0〜S6）として `bd` に登録できる。Shortcut 側 sc-27 は本 epic の親として残す。
-登録の要否はユーザー確認事項（設計ドキュメント末尾「未確定事項」参照）。
+pluse-board は `bd`（beads）で課題管理する方針（`AGENTS.md`）。本設計のレビュー確定後、
+**Shortcut に別ストーリー**として起こす（ユーザー方針）。必要なら `bd` にも epic + 子タスク（S0〜S6）を登録する。
