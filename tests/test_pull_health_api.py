@@ -6,47 +6,10 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
+from google.cloud.exceptions import NotFound
 from requests import HTTPError
 
 import pull_health_api as m
-
-
-# --------------------------------------------------------------------------- #
-# _today_jst
-# --------------------------------------------------------------------------- #
-def test_today_jst_uses_jst_offset(monkeypatch):
-    # 2026-01-01 23:00 UTC is already 2026-01-02 08:00 in JST (+9h).
-    from datetime import datetime, timezone
-
-    class _FrozenDatetime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return datetime(2026, 1, 1, 23, 0, tzinfo=timezone.utc).astimezone(tz)
-
-    monkeypatch.setattr(m, "datetime", _FrozenDatetime)
-    assert m._today_jst() == date(2026, 1, 2)
-
-
-# --------------------------------------------------------------------------- #
-# _bq_settings
-# --------------------------------------------------------------------------- #
-def test_bq_settings_defaults(monkeypatch):
-    monkeypatch.delenv("BQ_DATASET_RAW", raising=False)
-    monkeypatch.delenv("BQ_LOCATION", raising=False)
-    assert m._bq_settings() == ("fitbit_raw", "asia-northeast1")
-
-
-def test_bq_settings_env_override(monkeypatch):
-    monkeypatch.setenv("BQ_DATASET_RAW", "custom_raw")
-    monkeypatch.setenv("BQ_LOCATION", "us-central1")
-    assert m._bq_settings() == ("custom_raw", "us-central1")
-
-
-def test_bq_settings_empty_env_falls_back(monkeypatch):
-    # Empty string should fall back to the default (``or`` handles falsy values).
-    monkeypatch.setenv("BQ_DATASET_RAW", "")
-    monkeypatch.setenv("BQ_LOCATION", "")
-    assert m._bq_settings() == ("fitbit_raw", "asia-northeast1")
 
 
 # --------------------------------------------------------------------------- #
@@ -63,29 +26,6 @@ def test_flatten_keeps_name_and_serialises_raw():
 
 def test_flatten_missing_name_is_none():
     assert m._flatten({"value": 1})["name"] is None
-
-
-# --------------------------------------------------------------------------- #
-# _day_ranges
-# --------------------------------------------------------------------------- #
-def test_day_ranges_splits_into_single_days():
-    ranges = m._day_ranges(date(2026, 4, 1), date(2026, 4, 4))
-    assert ranges == [
-        (date(2026, 4, 1), date(2026, 4, 2)),
-        (date(2026, 4, 2), date(2026, 4, 3)),
-        (date(2026, 4, 3), date(2026, 4, 4)),
-    ]
-
-
-def test_day_ranges_empty_when_start_ge_end():
-    assert m._day_ranges(date(2026, 4, 4), date(2026, 4, 4)) == []
-    assert m._day_ranges(date(2026, 4, 5), date(2026, 4, 4)) == []
-
-
-def test_day_ranges_single_day():
-    assert m._day_ranges(date(2026, 4, 1), date(2026, 4, 2)) == [
-        (date(2026, 4, 1), date(2026, 4, 2))
-    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -200,7 +140,7 @@ def test_delete_existing_runs_query(capsys):
 
 def test_delete_existing_skips_when_table_missing(capsys):
     bq = _FakeBQ()
-    bq._query_error = Exception("404 Not found: table")
+    bq._query_error = NotFound("table not found")
     m._delete_existing(
         bq, "proj.ds.steps", "steps", date(2026, 4, 1), date(2026, 4, 2), "asia-northeast1"
     )
@@ -277,7 +217,7 @@ def _patched_main(monkeypatch):
 
     monkeypatch.setattr(m, "_bq_client", lambda: fake_bq)
     monkeypatch.setattr(m, "_load_to_bq", _fake_load)
-    monkeypatch.setattr(m, "_today_jst", lambda: date(2026, 4, 10))
+    monkeypatch.setattr(m, "today_jst", lambda: date(2026, 4, 10))
     monkeypatch.setattr(m, "track_ingest", _noop_track)
     return SimpleNamespace(bq=fake_bq, loaded=loaded)
 
