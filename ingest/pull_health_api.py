@@ -12,6 +12,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 
 from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
 from requests import HTTPError
 
 from health_api_client import HealthApiClient
@@ -90,12 +91,11 @@ def _delete_existing(
     try:
         job = bq.query(sql, job_config=job_config, location=location)
         job.result()
-    except Exception as e:
-        # 初回実行などでテーブルが存在しない場合はスキップ
-        if "Not found" in str(e):
-            print(f"  {data_type}: テーブル未作成のため削除スキップ")
-            return
-        raise
+    except NotFound:
+        # 初回実行などでテーブルが存在しない場合はスキップ。
+        # NotFound 以外のエラーは握りつぶさず伝播させる。
+        print(f"  {data_type}: テーブル未作成のため削除スキップ")
+        return
 
     deleted = job.num_dml_affected_rows or 0
     print(f"  {data_type}: 既存 {deleted} 件を削除（{start} – {end}、冪等化）")
