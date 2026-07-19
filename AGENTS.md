@@ -65,3 +65,32 @@ Use `bd` for ALL task tracking in this project — do NOT use TodoWrite, TaskCre
 - `bd dolt pull` — sync latest before starting work
 - `bd dolt push` — sync your changes back at end of session
 - Do not hand-edit `.beads/issues.jsonl`; use `bd` commands.
+
+## Cursor Cloud specific instructions
+
+The VM startup update script installs `uv`, runs `uv sync --frozen` (groups `ingest`,
+`dev`, `sqlmesh`, `lineage`), and `npm --prefix reports ci`. `uv` lives at
+`~/.local/bin` and is on `PATH` in login shells (`~/.bashrc` sources `~/.local/bin/env`);
+non-login shells may need `export PATH="$HOME/.local/bin:$PATH"` first.
+
+What runs offline (no GCP/BigQuery/OAuth/Neon — the common case in cloud):
+- Python tests: `uv run pytest --cov` (external services are mocked; see `tests/`).
+- Lint/lock checks per the `## Verification` section (`./scripts/actionlint`,
+  `UV_CACHE_DIR=.uv-cache uv lock --check`). `actionlint` self-pins via the Go
+  toolchain when no local binary/Docker exists; first run downloads Go modules.
+
+What needs secrets (cannot run in a credential-less VM):
+- `ingest/pull_health_api.py` (Google Health OAuth + BigQuery write).
+- Evidence `npm run sources` and SQLMesh `plan/run` (both need BigQuery auth;
+  prod/`ci` SQLMesh also needs Neon Postgres state).
+
+Demonstrating the Evidence dashboard app WITHOUT BigQuery credentials: the pages
+query a source named `bq`. Temporarily point it at a local DuckDB seed instead of
+BigQuery — install the connector with `npm --prefix reports install --no-save
+@evidence-dev/duckdb`, add `"@evidence-dev/duckdb": {}` under `plugins.datasources`
+in `reports/evidence.config.yaml`, and set `reports/sources/bq/connection.yaml` to
+`type: duckdb` with `options.filename` pointing at a `.duckdb` file that has a
+`fitbit_mart` schema containing the `mart_*` tables (see the SQLMesh models under
+`sqlmesh_project/models/marts/` for columns). Then `npm --prefix reports run sources`
+and `npm --prefix reports run dev` (serves `http://localhost:3000/pluse-board`).
+These are throwaway demo edits — revert them and never commit the seed DB.
