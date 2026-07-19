@@ -3,7 +3,8 @@
 The `Daily Build Triage` workflow can be tested manually from GitHub Actions
 without forcing `Daily Build` to fail.
 
-Before testing, add repository secret `OPENAI_API_KEY`.
+Before testing, add repository secret `CLAUDE_CODE_OAUTH_TOKEN`
+(generate it with `claude setup-token`).
 
 ## Dry-run synthetic tests
 
@@ -12,17 +13,17 @@ Keep `dry_run` set to `true`, then choose one `test_case`.
 
 | test_case | Expected behavior |
 | --- | --- |
-| `transient_network` | Codex should classify the log as `transient_retryable`. Because this is a dry run, no rerun is started. |
-| `report_dependency` | Codex should classify the log as a fixable report or lockfile issue and may generate a patch artifact. No PR is opened in dry run mode. |
-| `dbt_sql` | Codex should classify the log as `dbt_or_report_fixable` and may generate a patch artifact. No PR is opened in dry run mode. |
-| `gcp_wif_manual` | Codex should classify the log as `credentials_or_gcp_manual`. No rerun, patch PR, or issue is created in dry run mode. |
-| `health_data_manual` | Codex should classify the log as `health_api_or_data_manual`. No rerun, patch PR, or issue is created in dry run mode. |
+| `transient_network` | Claude should classify the log as `transient_retryable`. Because this is a dry run, no rerun is started. |
+| `report_dependency` | Claude should classify the log as a fixable report or lockfile issue and may generate a patch artifact. No PR is opened in dry run mode. |
+| `dbt_sql` | Claude should classify the log as `dbt_or_report_fixable` and may generate a patch artifact. No PR is opened in dry run mode. |
+| `gcp_wif_manual` | Claude should classify the log as `credentials_or_gcp_manual`. No rerun, patch PR, or issue is created in dry run mode. |
+| `health_data_manual` | Claude should classify the log as `health_api_or_data_manual`. No rerun, patch PR, or issue is created in dry run mode. |
 
 Artifacts to inspect:
 
 - `daily-build-triage`
-- `daily-build-codex-patch`, only when Codex generated a patch
-- `daily-build-codex-patch-summary`, when patch generation ran
+- `daily-build-claude-patch`, only when Claude generated a patch
+- `daily-build-claude-patch-summary`, when patch generation ran
 
 ## Dry-run against a real failed run
 
@@ -32,7 +33,7 @@ and keep `dry_run` set to `true`.
 Expected behavior:
 
 - The workflow downloads the real failed run logs.
-- Codex writes `codex-triage.json`.
+- Claude writes `triage.json`.
 - No rerun, PR, or issue is created.
 
 ## End-to-end controlled run
