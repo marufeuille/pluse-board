@@ -8,7 +8,7 @@ dependencies = [
 
 [dependency-groups]
 ingest = [
-    "google-auth>=2.56.0",
+    "google-auth>=2.56.2",
     "google-auth-oauthlib>=1",
     "google-cloud-bigquery>=3.42.2",
     "requests>=2.34.2",
@@ -24,7 +24,7 @@ sqlmesh = [
     "psycopg2-binary",
 ]
 lineage = [
-    "openlineage-python>=1.51.0",
+    "openlineage-python>=1.52.0",
     # SQLMesh のモデル評価を OpenLineage で計装（Phase 2）。set_console() で
     # console を差し替え START/COMPLETE/FAIL + カラム lineage + 実行統計を emit。
     "sqlmesh-openlineage>=0.1.0",
