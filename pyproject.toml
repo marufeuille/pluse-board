@@ -10,7 +10,7 @@ dependencies = [
 ingest = [
     "google-auth>=2.58.0",
     "google-auth-oauthlib>=1.4.1",
-    "google-cloud-bigquery>=3.45.0",
+    "google-cloud-bigquery>=3.45.2",
     "requests>=2.34.2",
     "pydantic>=2.13.5",
 ]
