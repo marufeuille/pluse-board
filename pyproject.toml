@@ -8,11 +8,11 @@ dependencies = [
 
 [dependency-groups]
 ingest = [
-    "google-auth>=2.59.1",
+    "google-auth>=2.61.0",
     "google-auth-oauthlib>=1.5.0",
-    "google-cloud-bigquery>=3.46.0",
+    "google-cloud-bigquery>=3.46.1",
     "requests>=2.34.2",
-    "pydantic>=2.13.5",
+    "pydantic>=2.14.0",
 ]
 # SQLMesh: bigquery=データ接続, postgres=state 接続(Neon), github=CI/CD bot。
 # state は psycopg2-binary を使う（sqlmesh[postgres] は libpq ビルドが要る
