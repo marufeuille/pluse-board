@@ -8,11 +8,11 @@ dependencies = [
 
 [dependency-groups]
 ingest = [
-    "google-auth>=2.61.0",
+    "google-auth>=2.62.0",
     "google-auth-oauthlib>=1.5.0",
-    "google-cloud-bigquery>=3.46.1",
+    "google-cloud-bigquery>=3.46.2",
     "requests>=2.34.2",
-    "pydantic>=2.14.0",
+    "pydantic>=2.14.1",
 ]
 # SQLMesh: bigquery=データ接続, postgres=state 接続(Neon), github=CI/CD bot。
 # state は psycopg2-binary を使う（sqlmesh[postgres] は libpq ビルドが要る
@@ -24,7 +24,7 @@ sqlmesh = [
     "psycopg2-binary",
 ]
 lineage = [
-    "openlineage-python>=1.53.0",
+    "openlineage-python>=1.54.0",
     # SQLMesh のモデル評価を OpenLineage で計装（Phase 2）。set_console() で
     # console を差し替え START/COMPLETE/FAIL + カラム lineage + 実行統計を emit。
     "sqlmesh-openlineage>=0.1.0",
