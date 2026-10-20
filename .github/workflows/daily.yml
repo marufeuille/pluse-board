@@ -240,7 +240,7 @@ jobs:
         # ただし Daily Build の conclusion を failure にすると daily-build-triage が
         # 誤発火するので、job ではなく step で握る（下の Report Slack failure で可視化）。
         continue-on-error: true
-        uses: slackapi/slack-github-action@v2
+        uses: slackapi/slack-github-action@v3
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
