@@ -26,4 +26,6 @@ Set `should_open_pr` to true only for `code_or_lockfile_fixable` or `dbt_or_repo
 
 Never recommend changing secrets, GitHub repository settings, branch protection, GCP IAM, Workload Identity Federation, GitHub Variables, or Pages settings automatically.
 
-Return only JSON matching the schema.
+Write the result to `triage.json` at the repository root as a single JSON
+object that matches `.github/triage/schemas/daily-build-triage.schema.json`
+(all required keys, no additional properties). Write nothing else to that file.

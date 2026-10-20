@@ -171,7 +171,7 @@ jobs:
           set -euo pipefail
 
           if [ "$TEST_CASE" != "none" ]; then
-            cp ".github/codex/testdata/daily-build/$TEST_CASE.log" failed-run.log
+            cp ".github/triage/testdata/daily-build/$TEST_CASE.log" failed-run.log
           elif [ -n "$RUN_ID" ]; then
             gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed > failed-run.log ||
               gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log > failed-run.log ||
@@ -184,31 +184,48 @@ jobs:
             echo "No logs were available from gh run view." > failed-run.log
           fi
 
-      - name: Triage with Codex
-        id: codex
-        uses: openai/codex-action@v1
+      # Claude サブスクリプションの OAuth トークンで動かす（API 従量課金なし）。
+      # トークンは `claude setup-token` で発行して CLAUDE_CODE_OAUTH_TOKEN secret に設定する。
+      - name: Triage with Claude
+        uses: anthropics/claude-code-action@v1
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          sandbox: read-only
-          safety-strategy: drop-sudo
-          prompt-file: .github/codex/prompts/daily-build-triage.md
-          codex-args: >-
-            ["--output-schema", ".github/codex/schemas/daily-build-triage.schema.json"]
-          output-file: codex-triage.json
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Read `.github/triage/prompts/daily-build-triage.md` and follow it exactly.
+            Write the triage result to `triage.json` at the repository root.
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 25
+            --allowedTools "Read,Glob,Grep,Write"
 
       - name: Parse triage result
         id: parse
         run: |
-          classification="$(jq -r '.classification' codex-triage.json)"
-          should_rerun="$(jq -r '.should_rerun' codex-triage.json)"
-          should_open_pr="$(jq -r '.should_open_pr' codex-triage.json)"
+          # codex-action の --output-schema と違い、claude-code-action には出力スキーマ
+          # 強制がないので、ここで存在チェックと classification の enum 検証を行う。
+          if [ ! -s triage.json ]; then
+            echo "::error::Claude did not produce triage.json."
+            exit 1
+          fi
+
+          classification="$(jq -r '.classification' triage.json)"
+          should_rerun="$(jq -r '.should_rerun' triage.json)"
+          should_open_pr="$(jq -r '.should_open_pr' triage.json)"
+
+          case "$classification" in
+            transient_retryable|code_or_lockfile_fixable|dbt_or_report_fixable|credentials_or_gcp_manual|health_api_or_data_manual|unknown_manual) ;;
+            *)
+              echo "::error::Invalid classification: $classification"
+              exit 1
+              ;;
+          esac
 
           {
             echo "classification=$classification"
             echo "should_rerun=$should_rerun"
             echo "should_open_pr=$should_open_pr"
             echo "summary<<EOF"
-            jq -r '.summary' codex-triage.json
+            jq -r '.summary' triage.json
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -220,7 +237,7 @@ jobs:
             echo "- Should rerun: \`$should_rerun\`"
             echo "- Should open PR: \`$should_open_pr\`"
             echo
-            jq -r '.summary' codex-triage.json
+            jq -r '.summary' triage.json
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload triage artifacts
@@ -230,7 +247,7 @@ jobs:
           path: |
             daily-build-context.md
             failed-run.log
-            codex-triage.json
+            triage.json
           if-no-files-found: error
 
   rerun:
@@ -285,25 +302,26 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: daily-build-triage
-          path: .codex-runtime
+          path: .triage-runtime
 
-      - name: Generate patch with Codex
-        uses: openai/codex-action@v1
+      - name: Generate patch with Claude
+        uses: anthropics/claude-code-action@v1
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          sandbox: workspace-write
-          safety-strategy: drop-sudo
-          prompt-file: .github/codex/prompts/daily-build-patch.md
-          codex-args: '["--ephemeral"]'
-          output-file: /tmp/codex-patch-summary.md
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Read `.github/triage/prompts/daily-build-patch.md` and follow it exactly.
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 50
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash"
 
       - name: Create patch artifact
         id: diff
         run: |
-          rm -rf .codex-runtime
+          rm -rf .triage-runtime
           git add -N .
-          git diff --binary HEAD > codex.patch
-          if [ -s codex.patch ]; then
+          git diff --binary HEAD > claude.patch
+          if [ -s claude.patch ]; then
             echo "has_patch=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_patch=false" >> "$GITHUB_OUTPUT"
@@ -313,16 +331,16 @@ jobs:
         if: steps.diff.outputs.has_patch == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: daily-build-codex-patch
-          path: codex.patch
+          name: daily-build-claude-patch
+          path: claude.patch
           if-no-files-found: error
 
       - name: Upload patch summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: daily-build-codex-patch-summary
-          path: /tmp/codex-patch-summary.md
+          name: daily-build-claude-patch-summary
+          path: /tmp/claude-patch-summary.md
           if-no-files-found: ignore
 
   open_patch_pr:
@@ -346,7 +364,7 @@ jobs:
       - name: Download patch artifact
         uses: actions/download-artifact@v4
         with:
-          name: daily-build-codex-patch
+          name: daily-build-claude-patch
 
       - name: Apply patch and open PR
         env:
@@ -358,9 +376,9 @@ jobs:
         run: |
           base_branch="${FAILED_HEAD_BRANCH:-main}"
           run_id="${FAILED_RUN_ID:-manual-$GITHUB_RUN_ID}"
-          branch="codex/daily-build-fix-$run_id"
+          branch="claude/daily-build-fix-$run_id"
 
-          git apply --index codex.patch
+          git apply --index claude.patch
           if git diff --cached --quiet; then
             echo "Patch artifact did not produce staged changes."
             exit 0
@@ -369,11 +387,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git commit -m "Auto-fix Daily Build via Codex"
+          git commit -m "Auto-fix Daily Build via Claude"
           git push --force-with-lease origin "$branch:$branch"
 
           {
-            echo "Codex generated this patch after Daily Build failed."
+            echo "Claude generated this patch after Daily Build failed."
             echo
             echo "- Failed run: $FAILED_RUN_URL"
             echo "- Failed commit: \`$FAILED_HEAD_SHA\`"
@@ -395,7 +413,7 @@ jobs:
             gh pr create \
               --base "$base_branch" \
               --head "$branch" \
-              --title "Auto-fix Daily Build via Codex" \
+              --title "Auto-fix Daily Build via Claude" \
               --body-file pr-body.md
           fi
 
