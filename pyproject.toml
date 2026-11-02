@@ -10,9 +10,9 @@ dependencies = [
 ingest = [
     "google-auth>=2.62.0",
     "google-auth-oauthlib>=1.5.0",
-    "google-cloud-bigquery>=3.46.2",
+    "google-cloud-bigquery>=3.47.0",
     "requests>=2.34.2",
-    "pydantic>=2.14.1",
+    "pydantic>=2.14.2",
 ]
 # SQLMesh: bigquery=データ接続, postgres=state 接続(Neon), github=CI/CD bot。
 # state は psycopg2-binary を使う（sqlmesh[postgres] は libpq ビルドが要る
@@ -24,7 +24,7 @@ sqlmesh = [
     "psycopg2-binary",
 ]
 lineage = [
-    "openlineage-python>=1.54.0",
+    "openlineage-python>=1.55.0",
     # SQLMesh のモデル評価を OpenLineage で計装（Phase 2）。set_console() で
     # console を差し替え START/COMPLETE/FAIL + カラム lineage + 実行統計を emit。
     "sqlmesh-openlineage>=0.1.0",
@@ -32,7 +32,7 @@ lineage = [
 # pytest ベースの Python ユニットテスト。ingest / scripts のヘルパを外部依存
 # (BigQuery / Health API / GitHub API) をモックしてテストする。
 dev = [
-    "pytest>=8.3.4",
+    "pytest>=9.2.0",
     "pytest-cov>=6.0.0",
 ]
 
